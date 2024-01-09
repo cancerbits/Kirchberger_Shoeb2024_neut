@@ -1,0 +1,365 @@
+---
+title: "child_merge_heatmaps_bm_2"
+author: "Mohamed_Shoeb"
+date: "1/31/2022"
+output: html_document
+---
+
+## Cross-species colors, titles, and legends
+```{r}
+#smooth gene values within each dataset for heatmap visualisation
+ls_aggr_expr_smooth<- lapply(ls_aggr_expr, function(dataset){
+  bin_names <- colnames(dataset)
+  smooth_data <- apply(dataset,1,function(x){
+    loess(x ~ seq(ncol(dataset)), degree=1, span = 0.75)$fitted
+  }) %>%
+  t()
+  colnames(smooth_data) <- bin_names
+  smooth_data
+  })
+
+#range of each dataset
+ls_range <- lapply(ls_aggr_expr_smooth, range)
+
+#cap values to the lower bound of the minimum range
+range_size <- sapply(ls_range, function(x){
+  x %>%abs%>%sum
+  })
+min_range <- ls_range[[which.min(range_size)]] %>%abs %>% min
+ls_aggr_expr_smooth <- lapply(ls_aggr_expr_smooth, function(x){
+  x%>% 
+    as.data.frame() %>% 
+    mutate_all(~ ifelse(abs(.)>min_range, min_range* ./abs(.),.))
+  }) %>% 
+  unname()
+
+#complexheatmap colum annotation
+## number and density of cells per bin
+ss_ls <- list(ss_df_traj,
+                     ss_df_xie_bm,
+                     ss_df_ballesteros_bm,
+                     ss_df_neutime_bm,
+                     ss_df_abs,
+                     ss_df_suo_neut_bm,
+                     ss_df_tabula_sapiens_neut_bm
+                     )
+## number and percentage of cells per bin and quality of bin based on number of cells
+bin_cells <- lapply(ss_ls,function(x){
+                       aggr_bins_n(x) %>%
+    mutate(percent = n/sum(n),
+           quality = ifelse(n>=3, "TRUE", "FALSE")) %>% 
+    arrange(as.numeric(pseudotime_bin))}) %>% 
+  bind_rows()
+##timepoint annotation defined by majority vote
+bin_annot_all <- c(cell_avg_hc_labels,
+                   aggr_bin_xie_bm_annot$tissue ,
+                   aggr_bin_ballesteros_bm_annot$tissue %>% tolower(),
+                   aggr_bin_neutime_bm_annot$tissue,
+                   aggr_bin_abs_annot$cell_type,
+                   aggr_bin_suo_bm_annot$cell_type,
+                   aggr_bin_tabula_sapiens_bm_annot$tissue%>%as.character())
+
+##datasets titles
+dataset_titles <- c("This study\n ",
+                    "Xie 2020\n ",
+                    "Ballesteros 2020\n ",
+                    "Grieshaber-Bouyer 2020\n ",
+                    "Xie 2021\n ",
+                    "Suo 2022\n ",
+                    "Tabula sapiens 2022\n ")
+##bins annotation colors
+xie_col <- c("G0" = "#ffffe5",
+             "G2" = "#fff7bc",
+             "G3" = "#fee391",
+             "G4" = "#fec44f",
+             "G5a" = "#fe9929",
+             "G5b" = "#ec7014",
+             "G5c" = "#cc4c02")
+xie_col <- c("WT_BM_C-kit+Gr1"="#fff7bc",
+             "WT_BM"="#fec44f")
+ballesteros_col <- c("bm" = "#ffeda0",
+                     "spleen" = "#fcc5c0",
+                     "lung" = "#fa9fb5",
+                     "pbzt5" = "#f768a1")
+neutime_col <- c("BM"  = "#ffeda0",
+                 "BL" = "#feb24c")
+abs_col <- c("proN"= "#edf8b1",
+             "myeN"= "#c7e9b4",
+             "metaN"= "#7fcdbb",
+             "matureN" = "#41b6c4")
+suo_col <- c(PROMYELOCYTE = "#edf8b1",
+             MYELOCYTE = "#c7e9b4",
+             NEUTROPHIL = "#41b6c4")
+tabula_sapiens_col <- c("bone marrow" = "#edf8b1",
+                     "spleen" = "#fcc5c0",
+                     "blood" = "#fa9fb5",
+                     "parotid gland" = "#f768a1")
+##colors of columns annotations
+column_annot_cols <- list(species = c("zebrafish" = "#6a51a3",
+                                      "mouse" = "#fc4e2a",
+                                      "human" = "#2171b5"),
+                          Dataset = c("traj" = "#54278f",
+                                      "xie" = "#fc4e2a",
+                                      "ballesteros" = "#fc4e2a",
+                                      "neutrotime" = "#fc4e2a",
+                                      "abs" = "#253494",
+                                      "suo" = "#253494",
+                                      "tabula_sapiens" = "#253494"),
+                          `Bin annotation` = c(annot_colors$phase,
+                                               xie_col,
+                                               ballesteros_col,
+                                               neutime_col,
+                                               abs_col,
+                                               suo_col,
+                                               tabula_sapiens_col),
+                          `Bin quality` = c("TRUE" = "#FF000000",
+                                            "FALSE" = "#FF000080"))
+##generate complexheatmap column annotation object
+column_annot <- HeatmapAnnotation(Dataset = aggr_timepoints_annot$dataset,
+                                  `Bin annotation` = bin_annot_all %>% factor(., levels = unique(.)),
+                                  `Cell density` = anno_barplot(bin_cells$percent),
+                                  `Bin quality` = bin_cells$quality,
+                                  col = column_annot_cols,
+                                  show_legend = c( FALSE, FALSE, FALSE),
+                                  simple_anno_size = unit(0.35, "cm"),
+                                  annotation_name_gp = gpar(fontsize = 8, fontface = "bold"))
+
+#plot complexheatmap
+#PiYG Spectral
+col_fun <- circlize::colorRamp2(4:-4, grDevices::hcl.colors(9,"RdYlBu"))
+#datasets legends
+expr_lgd <- Legend(col_fun = col_fun,
+              title = "Scaled\nexpression",
+              direction = "vertical",
+              at = c(-4, 4),
+              labels = c("low", "high"),
+              legend_height = unit(1.5, "cm"),
+              labels_gp = gpar(fontsize = 7),
+              title_gp = gpar(fontsize = 7))
+lgd_zfish <- Legend(title = "Maturation phase",
+                    labels = c("P1", "P2", "P3", "P4"),
+                    labels_gp = gpar(fontsize = 5),
+              legend_gp = gpar(fill = annot_colors$phase),
+              ncol = 2,
+              direction = "vertical",
+              gap = unit(0, "cm"),
+              grid_height = unit(0.035, "cm"), grid_width = unit(0.3, "cm"),
+              title_position = "topleft",
+              title_gp = gpar(fontface = "plain",
+                              fontsize = 5)
+                              )
+lgd_xie <- Legend(title = "Cell cluster",
+                    labels = names(xie_col),
+                    labels_gp = gpar(fontsize = 5),
+              legend_gp = gpar(fill = xie_col),
+              ncol = 1,
+              direction = "vertical",
+              gap = unit(0, "cm"),
+              grid_height = unit(0.035, "cm"), grid_width = unit(0.15, "cm"),
+              title_position = "topleft",
+              title_gp = gpar(fontface = "plain",
+                              fontsize = 5)
+                              )
+lgd_ballesteros <- Legend(title = "Tissue",
+                    labels = c("BM"),
+                    labels_gp = gpar(fontsize = 5),
+              legend_gp = gpar(fill = ballesteros_col["bm"]),
+              ncol = 2,
+              direction = "vertical",
+              gap = unit(0, "cm"),
+              grid_height = unit(0.035, "cm"), grid_width = unit(0.2, "cm"),
+              title_position = "topleft",
+              title_gp = gpar(fontface = "plain",
+                              fontsize = 5))
+lgd_neutime <- Legend(title = "Tissue",
+                    labels = "BM",
+                    labels_gp = gpar(fontsize = 5),
+              legend_gp = gpar(fill = neutime_col["BM"]),
+              ncol = 1,
+              direction = "vertical",
+              gap = unit(0, "cm"),
+              grid_height = unit(0.035, "cm"), grid_width = unit(0.3, "cm"),
+              title_position = "topleft",
+              title_gp = gpar(fontface = "plain",
+                              fontsize = 5))
+lgd_abs <- Legend(title = "Neutrophil stage",
+                    labels = names(abs_col),
+                    labels_gp = gpar(fontsize = 5),
+              legend_gp = gpar(fill = abs_col),
+              ncol = 1,
+              direction = "vertical",
+              gap = unit(0, "cm"),
+              grid_height = unit(0.035, "cm"), grid_width = unit(0.3, "cm"),
+              title_position = "topleft",
+              title_gp = gpar(fontface = "plain",
+                              fontsize = 5))
+lgd_suo <- Legend(title = "Neutrophil stage",
+                    labels = c("proMye", "Mye", "Neut"),
+                    labels_gp = gpar(fontsize = 5),
+              legend_gp = gpar(fill = suo_col),
+              ncol = 1,
+              direction = "vertical",
+              gap = unit(0, "cm"),
+              grid_height = unit(0.035, "cm"), grid_width = unit(0.3, "cm"),
+              title_position = "topleft",
+              title_gp = gpar(fontface = "plain",
+                              fontsize = 5))
+lgd_tabula_sapiens <- Legend(title = "Tissue",
+                    labels = c("BM"),
+                    labels_gp = gpar(fontsize = 5),
+              legend_gp = gpar(fill = tabula_sapiens_col["bone marrow"]),
+              ncol = 2,
+              direction = "vertical",
+              gap = unit(0, "cm"),
+              grid_height = unit(0.035, "cm"), grid_width = unit(0.3, "cm"),
+              title_position = "topleft",
+              title_gp = gpar(fontface = "plain",
+                              fontsize = 5))
+```
+
+##Generate the components of cross-species complexheatmap 
+```{r}
+#highlight gene subset
+all_hm_gene <- c(gene_label, 
+                unlist(stefanie_neut_genes_lst)) %>% unique
+#zfish and mouse single-cell
+##generate right row annotation object
+merge_zfish_mouse_row_annot <- rowAnnotation(`Mouse\nlags` = anno_points(ccf_all_mean_species[gene_order_ortho,"mouse", drop = FALSE],
+                                                 size = unit(0.7, "mm"),
+                                                 gp = gpar(col = column_annot_cols$Dataset["xie"])),
+                           annotation_name_gp = gpar(fontsize = 8, fontface = "bold"))
+##generate column annotation object
+column_annot <- HeatmapAnnotation(Dataset = aggr_timepoints_annot$dataset[1:400],
+                                  `Bin annotation` = bin_annot_all[1:400] %>% factor(., levels = unique(.)),
+                                  `Cell density` = anno_barplot(bin_cells$percent[1:400],
+                                                                ylim = c(0, round(max(bin_cells$percent)+0.01,2))),
+                                  `Bin quality` = bin_cells$quality[1:400],
+                                  col = column_annot_cols,
+                                  show_legend = c( FALSE, FALSE, FALSE),
+                                  simple_anno_size = unit(0.35, "cm"),
+                                  show_annotation_name = FALSE,
+                                  annotation_name_gp = gpar(fontsize = 8, fontface = "bold"))
+##generate left row annotation object
+sc_bulk_module_annot <- rowAnnotation(module = gene_clusters_avg_hc[gene_order_ortho,"module"],
+                              col = list(module = annot_colors$module),
+                              show_legend = FALSE,
+                              show_annotation_name = FALSE,
+                              annotation_name_gp = ,
+                              simple_anno_size = unit(0.35, "cm"))
+##complexheatmap of zfish and mouse datasets
+zfish_mouse_hm <- do.call(cbind,ls_aggr_expr_smooth)[gene_order_ortho,1:400]%>% 
+  ComplexHeatmap::Heatmap(col = colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+           column_title = dataset_titles[1:4],
+           column_title_gp = gpar(fontsize = 5),
+           row_split = gene_clusters_avg_hc[gene_order_ortho,"module"],
+           row_gap = unit(rep(0.75,3), "mm"),
+           column_gap = unit(c(2, rep(0.5,2)), "mm"),
+           column_split = factor(aggr_timepoints_annot$dataset[1:400],levels = unique(aggr_timepoints_annot$dataset[1:400])),
+           row_title = glue::glue("Gene module (n = {length(gene_order_ortho)} genes)"),
+           left_annotation = sc_bulk_module_annot,
+            cluster_rows = FALSE,
+            cluster_columns = FALSE,
+            show_row_names = FALSE,
+            row_names_gp = gpar(fontsize = 3),
+            show_column_names = FALSE,
+            column_names_gp = gpar(fontsize = 7),
+            show_heatmap_legend = FALSE,
+            top_annotation = column_annot,
+            width = unit(2*4, "cm")
+           )
+
+#human single-cell
+##generate right row annotation object of human datasets
+human_hm_row_annot <- rowAnnotation(`Human\nlags` = anno_points(ccf_all_mean_species[gene_order_ortho,"human", drop = FALSE],
+                                                 size = unit(0.5, "mm"),
+                                                 gp = gpar(col = column_annot_cols$Dataset["abs"])),
+                           foo = anno_mark(at = which(gene_order_ortho%in%all_hm_gene),
+                                    labels = gene_order_ortho[which(gene_order_ortho%in%all_hm_gene)],
+                                    labels_gp = gpar(fontsize = 5,
+                                                     fontface = ifelse(gene_order_ortho[which(gene_order_ortho%in%all_hm_gene)]%in% stefanie_neut_genes_lst$regulators,"bold.italic","italic")),
+                                    link_gp = gpar(lwd = 0.1),padding =  unit(0.5, "mm")),
+                           annotation_name_gp = gpar(fontsize = 8, fontface = "bold"))
+##generate column annotation object of human single-cell datasets
+column_annot <- HeatmapAnnotation(Dataset = aggr_timepoints_annot$dataset[401:700],
+                                  `Bin annotation` = bin_annot_all[401:700] %>% factor(., levels = unique(.)),
+                                  `Cell density` = anno_barplot(bin_cells$percent[401:700],
+                                                                ylim = c(0, round(max(bin_cells$percent)+0.01,2)),
+                                                                axis = FALSE),
+                                  `Bin quality` = bin_cells$quality[401:700],
+                                  col = column_annot_cols,
+                                  show_legend = c( FALSE, FALSE, FALSE),
+                                  simple_anno_size = unit(0.35, "cm"),
+                                  show_annotation_name = FALSE,
+                                  annotation_name_gp = gpar(fontsize = 8, fontface = "bold"))
+##generate human single-cell datasets complexheatmap
+human_hm <- do.call(cbind,ls_aggr_expr_smooth)[gene_order_ortho,401:700]%>% 
+  ComplexHeatmap::Heatmap(col = colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+                   column_title = dataset_titles[5:7],
+                   column_title_gp = gpar(fontsize = 5),
+                   row_split = gene_clusters_avg_hc[gene_order_ortho,"module"],
+                   row_gap = unit(rep(0.75,3), "mm"),
+                   column_gap = unit(0.5, "mm"),
+                   column_split = factor(aggr_timepoints_annot$dataset[401:700],levels = unique(aggr_timepoints_annot$dataset[401:700])),
+                   row_title = NULL,
+                   cluster_rows = FALSE,
+                   cluster_columns = FALSE,
+                   show_row_names = FALSE,
+                   row_names_gp = gpar(fontsize = 3),
+                   show_column_names = FALSE,
+                   column_names_gp = gpar(fontsize = 7),
+                   show_heatmap_legend = FALSE,
+                   top_annotation = column_annot,
+                   right_annotation = human_hm_row_annot,
+                   width = unit(2*3, "cm"))
+```
+
+## Put together all parts of cross-species heatmap
+Figure 7 bottom heatmap
+```{r}
+merge_all_row_right_annot <- rowAnnotation(`Mouse\nlags` = anno_points(ccf_all_mean_species[gene_order_ortho,"mouse", drop = FALSE],
+                                                 size = unit(0.7, "mm"),
+                                                 axis_param = list(gp=gpar(fontsize = 5)),
+                                                 gp = gpar(col = column_annot_cols$Dataset["xie"]),ylim = c(-100, 100)),
+                                                 `Human\nlags` = anno_points(ccf_all_mean_species[gene_order_ortho,"human", drop = FALSE],
+                                                 size = unit(0.7, "mm"),
+                                                 axis_param = list(gp=gpar(fontsize = 5)),
+                                                 gp = gpar(col = column_annot_cols$Dataset["abs"]),ylim = c(-100, 100)),
+                           foo = anno_mark(at = which(gene_order_ortho%in%all_hm_gene),
+                                    labels = gene_order_ortho[which(gene_order_ortho%in%all_hm_gene)],
+                                    labels_gp = gpar(fontsize = 5,
+                                                     fontface = ifelse(gene_order_ortho[which(gene_order_ortho%in%all_hm_gene)]%in% stefanie_neut_genes_lst$regulators,"bold.italic","italic")),
+                                    link_gp = gpar(lwd = 0.1),padding =  unit(0.5, "mm")),
+                           annotation_name_gp = gpar(fontsize = 6),
+                           annotation_name_rot = 0,
+                           annotation_name_side  = c(`Mouse\nlags` = "top", `Human\nlags` = "top"))
+human_hm@right_annotation <- merge_all_row_right_annot
+draw(zfish_mouse_hm+human_hm, ht_gap = unit(c( -0.1), "mm"), padding = unit(c(10,2,6,1), "mm"))
+fig_5_hm_expr_lgd <- draw(expr_lgd,  x = unit(20.2, "cm"), y = unit(17.3, "cm"), just = c("right", "top"))
+draw(lgd_zfish,  x = unit(3.4, "cm"), y = unit(1.5, "cm"), just = c("top"))
+draw(lgd_xie,  x = unit(5.6, "cm"), y = unit(1.5, "cm"), just = c("top"))
+draw(lgd_ballesteros,  x = unit(7, "cm"), y = unit(1.5, "cm"), just = c("top"))
+draw(lgd_neutime,  x = unit(9, "cm"), y = unit(1.5, "cm"), just = c("top"))
+draw(lgd_abs,  x = unit(11.5, "cm"), y = unit(1.5, "cm"), just = c("top"))
+draw(lgd_suo,  x = unit(13.5, "cm"), y = unit(1.5, "cm"), just = c("top"))
+draw(lgd_tabula_sapiens,  x = unit(15.2, "cm"), y = unit(1.5, "cm"), just = c("top"))
+
+decorate_annotation("Mouse\nlags", {
+    grid.lines(unit(0.5, "cm"), unit(c(-7, 5.7), "cm"), gp = gpar(col = "grey", lty = 2, alpha = 0.8))
+})
+
+decorate_annotation("Human\nlags", {
+    grid.lines(unit(0.5, "cm"), unit(c(-7, 5.7), "cm"), gp = gpar(col = "grey", lty = 2, alpha = 0.8))
+})
+
+decorate_annotation("module", {
+    grid.text(c("M3","M2","M1"),rep(0.2,3) , c(-6,-2,3), default.units = "cm",gp=gpar(fontsize=8, col="white"),rot=90)
+})
+
+decorate_annotation("module", {
+    grid.text(ss_ls %>% sapply(nrow) %>% paste0("n = ",.," cells"), c(1.1,3.7,5.2,7.6,10,11.6,13.4), 7, default.units = "cm",gp=gpar(fontsize=5,  col="black"))
+})
+
+decorate_annotation("module", {
+    grid.text(c("Zebrafish", "Mouse", "Human"), c(1.2,5.5,12.2), 8.7, default.units = "cm",gp=gpar(fontsize=7,  col="black"))
+})
+```

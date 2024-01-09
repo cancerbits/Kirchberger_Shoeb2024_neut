@@ -1,0 +1,81 @@
+---
+title: "zebrafish neutrophils"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+## subset {.tabset}
+
+### Define neutrophils subset 
+```{r }
+## ---- neut_sub-populations
+#concordance between neutrophil prediction across ref1 and ref2
+srt_obj@meta.data %$% table(ref1_neut_sub,ref2_neut_sub)
+#subset neutrophils and exclude low-quality cluster
+neut_valid <- srt_obj@meta.data %>%
+  filter(ref1_neut_sub=="neutrophils"&ref2_neut_sub=="neutrophils"
+         ) %>%
+  rownames()
+srt_traj <- subset(srt_obj, cells = neut_valid) 
+
+#references and clusters
+neut_valid_cluster <- srt_obj@meta.data %>%
+  filter(ref1_neut_sub=="neutrophils"&ref2_neut_sub=="neutrophils",
+         res_0.05 %in%c(0,1)
+         ) %>%
+  rownames()
+srt_traj_cluster <- subset(srt_obj, cells = neut_valid_cluster) 
+
+#remove low expressed genes in the Neutrophils subset 
+high_genes <- rownames(srt_traj@assays$RNA@counts)[rowSums(srt_traj@assays$RNA@counts>0) >= param_lst$MIN_CELLS]
+srt_traj <-  subset(srt_traj, features = high_genes)
+
+```
+
+
+### Define neutrophil trajectory subset
+
+exclude hemoglobin genes
+```{r}
+rna_genes <- rownames(GetAssayData(srt_traj, assay = "RNA"))
+srt_traj <- subset(srt_traj, features = rna_genes %>% str_subset("^hb[ba]|si:ch211.5k11.8",negate=TRUE))
+```
+
+```{r zebrafish_traj_sub, cache=TRUE}
+
+DefaultAssay(srt_traj) <- "RNA"
+srt_traj[["SCT"]] <- NULL
+
+srt_traj <- SCTransform(srt_traj,
+              assay = "RNA",
+              vars.to.regress = c("G2M.Score"),
+              return.only.var.genes = F,
+              verbose = FALSE)
+
+srt_traj <- RunPCA(srt_traj,
+                  verbose = FALSE,
+                  assay='SCT',
+                  npcs = length(param_lst$PCA_DIMS)
+                  )
+
+#integrate data using harmony
+srt_traj <- RunHarmony(srt_traj,
+                      group.by.vars = "batch",
+                      assay.use="SCT",
+                      npcs = length(param_lst$PCA_DIMS))
+
+srt_traj <- RunUMAP(srt_traj,
+                   reduction = "harmony",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   dims = param_lst$PCA_DIMS)
+#cluster data
+srt_traj <- FindNeighbors(srt_traj, reduction = "harmony",assay="SCT")
+for(res in  c(0.02, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 0.6)){
+  srt_traj <- FindClusters(srt_traj, resolution = res,
+                          verbose = FALSE)
+  srt_traj@meta.data[glue("res_{res}")] <- srt_traj@meta.data[glue("SCT_snn_res.{res}")]
+  srt_traj@meta.data[glue("SCT_snn_res.{res}")] <- NULL
+  }
+```
+ 

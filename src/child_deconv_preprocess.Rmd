@@ -1,0 +1,138 @@
+---
+title: "deconv_preprocess"
+author: "Mohamed_Shoeb"
+date: "11/25/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Define common gene modules across species
+```{r}
+#common modules
+common_gene_clusters_lst <- lapply(gene_clusters_lst, function(zfish_degs){
+  intersect(zfish_degs,all_aggr_expr_genes)})
+
+#consistent modules
+consistent_gene_clusters_lst <- ccf_all_mean_species %>%
+  rownames_to_column("gene_symbol") %>%
+  left_join(stack(common_gene_clusters_lst) %>% dplyr::rename(gene_symbol = "values")) %>%
+  arrange(ind, human) %>%
+  filter(abs(human) <= 50 ) %$% #lag cutoff
+  split(gene_symbol, ind)
+```
+
+xCell cell markers
+```{r}
+#markers from different sources
+#cell types markers
+xcell_markers <- read_csv("xCell_signatures.csv") %>% 
+  dplyr::rename(n_genes = "# of genes") %>% 
+  pivot_longer(-c(Celltype_Source_ID, n_genes), values_to = "human_symbol") %>% 
+  dplyr::select(-name) %>% 
+  left_join(homo_df %>% dplyr::select(-mouse_symbol))%>%
+  na.omit()%>%
+  mutate(cell_type = str_replace(Celltype_Source_ID, "_.+",""))%>%
+  dplyr::distinct(cell_type, ZFIN.symbol)
+
+#unique cell types markers
+xcell_markers_unique <- xcell_markers %>%
+  group_by(ZFIN.symbol) %>%
+  filter(n() == 1) %>%
+  ungroup
+
+neuron_xcell_markers_unique <- xcell_markers_unique %>% 
+  filter(cell_type == "Neurons") %>% 
+  as.data.frame() 
+
+#overalp with zebrafish modules
+##all markers
+lapply(gene_clusters_lst, function(x){
+  intersect(x, xcell_markers %>% filter(cell_type == "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+
+lapply(gene_clusters_lst, function(x){
+  setdiff(x, xcell_markers %>% filter(cell_type != "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+##unique markers
+lapply(gene_clusters_lst, function(x){
+  intersect(x, xcell_markers_unique %>% filter(cell_type == "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+lapply(gene_clusters_lst, function(x){
+  setdiff(x, xcell_markers_unique %>% filter(cell_type != "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+
+#known cell types markers
+#cell types markers
+known_markers <- read_csv("signatures_known.csv") %>% 
+    dplyr::rename(n_genes = "# of genes", 
+                  cell_type = "Cell type",
+                  human_symbol = "Genes") %>% 
+  pivot_longer(-c(cell_type, Source, n_genes), values_to = "human_symbol") %>% 
+  dplyr::select(-name) %>% 
+  left_join(homo_df %>% dplyr::select(-mouse_symbol))%>%
+  na.omit()%>%
+  dplyr::distinct(cell_type, ZFIN.symbol)
+
+#unique cell types markers
+known_markers_unique <- known_markers %>%
+  group_by(ZFIN.symbol) %>%
+  filter(n() == 1) %>%
+  ungroup
+
+#overalp with zebrafish modules
+##all markers
+lapply(gene_clusters_lst, function(x){
+  intersect(x, known_markers %>% filter(cell_type == "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+lapply(gene_clusters_lst, function(x){
+  setdiff(x, known_markers %>% filter(cell_type != "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+##unique markers
+lapply(gene_clusters_lst, function(x){
+  intersect(x, known_markers_unique %>% filter(cell_type == "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+lapply(gene_clusters_lst, function(x){
+  setdiff(x, known_markers_unique %>% filter(cell_type != "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+##specific consistent
+consistent_specific_gene_clusters_lst <- lapply(consistent_gene_clusters_lst, function(x){
+  setdiff(x, known_markers_unique %>% filter(cell_type != "Neutrophils") %>% pull(ZFIN.symbol))
+  })
+
+```
+
+Supplementary Figure 8b
+```{r}
+immature_neut_gene_sets <- msigdbr::msigdbr(species = "Homo sapiens")%>%
+ filter(gs_name == "HAY_BONE_MARROW_IMMATURE_NEUTROPHIL")
+
+xcell_known_markers <- read_csv("signatures_known.csv") %>% 
+    dplyr::rename(n_genes = "# of genes", 
+                  cell_type = "Cell type",
+                  human_symbol = "Genes") %>% 
+  pivot_longer(-c(cell_type, Source, n_genes), values_to = "human_symbol")%>% 
+  dplyr::select(cell_type, human_symbol)
+
+ramirez_norm_human <- ramirez_count %>%
+  filter(hgnc_symbol %in% immature_neut_gene_sets$gene_symbol) %>%
+  column_to_rownames("hgnc_symbol") %>% 
+  mutate_all(~log2(.x+1))
+
+ramirez_scaled_human <- t(ramirez_norm_human) %>% scale %>% t() %>% as.data.frame
+ramirez_scaled_human <- apply(ramirez_scaled_human, 2, function(x){
+  ifelse(abs(x)>1.5, 1.5* x/abs(x),x)
+  })
+
+pdf("ramirez_HAY_BONE_MARROW_IMMATURE_NEUTROPHIL.pdf",5,7)
+pheatmap::pheatmap(ramirez_scaled_human,
+                   color =  colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+                     scale = "none",
+                     cluster_rows = TRUE,
+                     cluster_cols = FALSE,
+                     border_color = NA,
+                     show_rownames = TRUE,
+                     show_colnames = TRUE,
+                     fontsize_row=3.5)
+dev.off()
+```

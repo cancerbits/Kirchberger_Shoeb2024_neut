@@ -1,0 +1,263 @@
+---
+title: ""
+author: "Mohamed_Shoeb"
+date: "04/09/2023"
+output: html_document
+---
+
+Supplementary Figure 4
+## Monocole
+```{r}
+#Convert seurat object to cell data set
+cds <- SeuratWrappers::as.cell_data_set(srt_traj,reductions = "umap")
+
+#Define a single partition
+recreate.partitions <- c(rep(1, length(cds@colData@rownames)))
+names(recreate.partitions) <- cds@colData@rownames
+recreate.partitions <- as.factor(recreate.partitions)
+cds@clusters@listData[["UMAP"]][["partitions"]] <- recreate.partitions
+
+#Define cell clusters
+list.cluster <- srt_traj@active.ident
+cds@clusters@listData[["UMAP"]][["clusters"]] <- list.cluster
+
+#Monocole accepts only UMAP as dimensionality reduction. Rename harmony embedding as UMAP
+cds@int_colData@listData$reducedDims@listData$UMAP <- Embeddings(srt_traj, "harmony")[,1:2]
+colnames(cds@int_colData@listData$reducedDims@listData$UMAP) <- c("UMAP_1", "UMAP_2")
+#set cell names
+names(cds@clusters[["UMAP"]]$partitions) <- names(cds@clusters[["UMAP"]]$clusters)
+
+#Learn Monocole graph
+cds <- monocle3::learn_graph(cds, use_partition = FALSE, verbose = FALSE, close_loop = FALSE)
+cds <- monocle3::order_cells(cds, root_cells = head(ss_df_traj$cell_id))
+
+pdf("trajectory_monocole.pdf")
+#Plot graph structure
+monocle3::plot_cells(cds,
+                     color_cells_by  = "cluster",
+                     label_cell_groups = TRUE,
+                     label_leaves = FALSE,
+                     label_branch_points = TRUE)
+
+monocle3::plot_cells(cds,
+                     color_cells_by  = "partition",
+                     label_cell_groups = TRUE,
+                     label_leaves = FALSE,
+                     label_branch_points = TRUE)
+
+monocole_score <-monocle3::plot_cells(cds, 
+                     color_cells_by = "pseudotime",
+                     label_cell_groups = FALSE,
+                     label_leaves = FALSE,
+                     label_branch_points = TRUE,
+                     cell_size = 1)+
+  coord_fixed()+
+  scale_color_viridis(option = "inferno")+
+  labs(color = "Monocle score",
+       x = "Harmony 1",
+       y = "Harmony 2")+
+  theme(legend.position = c(0.05, 0.9),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 10))+
+  coord_equal()
+
+#Monocole3 vs Slingshot pseudotime scores
+monocole_df <- data.frame(x = ss_df_traj$pseudotime,
+           y = cds@principal_graph_aux@listData[["UMAP"]][["pseudotime"]][ss_df_traj$cell_id],
+           z = cds@clusters@listData[["UMAP"]][["clusters"]][ss_df_traj$cell_id]) %>% 
+  mutate(x = as.numeric(x),
+         y = as.numeric(y),
+         cluster = z)
+
+monocole_r <- monocole_df %$%
+  cor.test(x,y) %>%
+  `[`(c("estimate", "p.value")) %>%
+  unlist %>%
+  sprintf(.,fmt="%.3f") %>% 
+  paste0(c("R = ", "p.value = "),
+         .,
+         collapse = "\n")
+monocole_cor <- monocole_df %>% 
+  ggplot(aes(x, y))+
+  ggrastr::geom_point_rast(aes( color = cluster))+
+  geom_text(data = data.frame(x = 60,
+                              y = 90),
+            label = monocole_r,
+            size = 5,
+            color = "blue")+
+  geom_smooth(method = "lm",
+              color = "blue")+
+  labs(x = "Slingshot pseudotime score (cell)",
+       y = "Monocle pseudotime score  (cell)",
+       color = "Cluster label")+
+  coord_equal()
+dev.off()
+```
+
+## TSCAN
+```{r}
+#Convert Seurat to SingleCellExperiment
+sce <- as.SingleCellExperiment(srt_traj)
+#Add harmony embeddings
+SingleCellExperiment::reducedDims(sce) <- list(harmony = Embeddings(srt_traj, "harmony")[,1:2])
+#Add cluster labels
+SingleCellExperiment::colLabels(sce) <- srt_traj@active.ident
+#remotes::install_github("LTLA/TrajectoryUtils")
+#Aggregate cells by seurat cluster
+by.cluster <- scater::aggregateAcrossCells(sce, ids=SingleCellExperiment::colLabels(sce))
+#Obtain cluster-aggregated harmony embeddings
+centroids <- reducedDim(by.cluster, "harmony")
+#Creat minimum spanning tree
+mst <- TSCAN::createClusterMST(centroids, clusters=rownames(centroids))
+#Project cells onto the tree edges
+map.tscan <- TSCAN::mapCellsToEdges(sce, mst=mst, use.dimred="harmony")
+#Define root cluster and extract cell pseudotime scores across inferred branches 
+cell_order <- TSCAN::orderCells(map.tscan,mst,"10")
+#cross-branch average pseudotime
+pseud_time <- TrajectoryUtils::averagePseudotime(cell_order)
+#Get edges of the inferred trajectory
+line.data <- TSCAN::reportEdges(by.cluster, mst=mst, clusters=NULL, use.dimred="harmony")
+
+pdf("trajectory_tscan.pdf")
+#Plot inferred trajectory
+tscan_score <- scater::plotReducedDim(sce, "harmony", colour_by= I(pseud_time))+
+   geom_line(data=line.data, mapping=aes(x=harmony_1, y=harmony_2, group=edge))+
+  scale_color_viridis(option = "inferno")+
+  labs(color = "TSCAN score",
+       x = "Harmony 1",
+       y = "Harmony 2")+
+  theme(legend.position = c(0.1, 0.9),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 10))+
+  coord_equal()
+tscan_score$layers[[1]]$aes_params$alpha <- 1
+
+#TSCAN vs Slingshot pseudotime scores
+tscan_df <- tibble(x = setNames(ss_df_traj$pseudotime,
+                              ss_df_traj$cell_id)[colnames(sce)],
+           y = pseud_time,
+           z = SingleCellExperiment::colLabels(sce)
+           ) %>% 
+  mutate(x = as.numeric(x),
+         y = as.numeric(pseud_time),
+         cluster = z
+         )
+tscan_r <- tscan_df %$%
+  cor.test(x,y) %>%
+  `[`(c("estimate", "p.value")) %>%
+  unlist %>%
+  sprintf(.,fmt="%.3f") %>% 
+  paste0(c("R = ", "p.value = "),
+         .,
+         collapse = "\n")
+tscan_cor <- tscan_df %>% 
+  ggplot(aes(x, y))+
+  ggrastr::geom_point_rast(aes( color = cluster))+
+  geom_text(data = data.frame(x = 75,
+                              y = 60),
+            label = tscan_r,
+            size = 5,
+            color = "blue")+
+  geom_smooth(method = "lm",
+              color = "blue")+
+  labs(x = "Slingshot pseudotime score (cell)",
+       y = "TSCAN pseudotime score  (cell)",
+       color = "Cluster label")+
+  theme(legend.position = "none")+
+  coord_equal()
+dev.off()
+```
+
+## PC1
+```{r}
+pdf("trajectory_harmony1.pdf")
+
+harmony1_r <- ss_df_traj %$%
+  cor.test(pseudotime, harmony_1) %>%
+  `[`(c("estimate", "p.value")) %>%
+  unlist %>%
+  sprintf(.,fmt="%.3f") %>% 
+  paste0(c("R = ", "p.value = "),
+         .,
+         collapse = "\n")
+
+
+har1_score <-ss_df_traj %>% 
+  mutate(cluster = srt_traj@active.ident[cell_id]) %>% 
+  ggplot(aes(harmony_1, harmony_2))+
+  ggrastr::geom_point_rast(aes( color = harmony_1),size = 1)+
+  scale_color_viridis(option = "inferno")+
+  labs(x = "Harmony 1",
+       y = "Harmony 2 ",
+       color = "Harmony 1 score")+
+  coord_fixed()+
+  theme(legend.position = c(0.1, 0.9),
+        axis.text = element_text(size = 10),
+        axis.title = element_text(size = 10))+
+  coord_equal()
+
+
+har1_cor <- ss_df_traj %>% 
+  mutate(cluster = srt_traj@active.ident[cell_id]) %>% 
+  ggplot(aes(pseudotime, harmony_1))+
+  ggrastr::geom_point_rast(aes( color = cluster),size = 1)+
+  geom_text(data = data.frame(pseudotime = 50,
+                              harmony_1 = 25),
+            label = harmony1_r,
+            size = 5,
+            color = "blue")+
+  geom_smooth(method = "lm",
+              color = "blue")+
+  labs(x = "Slingshot pseudotime score (cell)",
+       y = "Harmony 1 value (cell)",
+       color = "Cluster label")+
+  theme(legend.position = "none")+
+  coord_equal()
+
+dev.off()
+```
+
+##Slingshot
+```{r}
+slingshot_score <- ggplot(ss_df_traj)+
+  ggrastr::geom_point_rast(aes(harmony_1, harmony_2, color = pseudotime),
+             size = 1)+
+  geom_path(aes(curve1_harmony_1, curve1_harmony_2))+
+  coord_fixed()+
+  labs(x = "Harmony 1", y = "Harmony 2")+
+  viridis::scale_color_viridis(option = "inferno")+
+  guides(color = guide_colourbar(title = "Slingshot score", title.position = "top", direction = "vertical"))+
+  theme(legend.position = c(0.02,0.93))
+
+slingshot_clusts <- DimPlot(srt_traj,
+        reduction = "harmony",
+        label = TRUE,
+        pt.size = 1,
+        label.size = 4,
+        raster=TRUE)+
+  coord_equal()+
+  NoLegend()
+
+
+```
+
+```{r}
+tibble(cell_id = colnames(sce),
+         cluster = SingleCellExperiment::colLabels(sce),
+         slingshot_score = setNames(ss_df_traj$pseudotime,
+                              ss_df_traj$cell_id)[colnames(sce)] %>% as.numeric(),
+         tscan_score = as.numeric(pseud_time),
+         monocle_score = cds@principal_graph_aux@listData[["UMAP"]][["pseudotime"]][cell_id],
+         first_component = setNames(ss_df_traj$harmony_1,
+                              ss_df_traj$cell_id)[colnames(sce)]
+           ) %>% 
+  arrange(slingshot_score) %>% 
+  write_csv(file.path("figures_tables", "fig_traj_comparison.csv"))
+ 
+pdf("traj_comparison.pdf",width = 15,height = 10)
+score_plts <- (slingshot_score|har1_score|tscan_score|monocole_score)
+cor_plts <- (slingshot_clusts|har1_cor|tscan_cor|monocole_cor)
+score_plts/plot_spacer()/cor_plts+plot_layout(height= c(5, -3 ,5))
+dev.off()
+
+```

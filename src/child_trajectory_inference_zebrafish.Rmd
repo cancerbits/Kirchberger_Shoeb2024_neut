@@ -1,0 +1,738 @@
+---
+title: "child_trajectory_inference: zebrafish"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+##  zebrafish trajectory
+Slingshot trajectory inference 
+```{r}
+## ---- run_slingshot_pca_traj
+sim_traj <- slingshot(Embeddings(srt_traj,  reduction = "harmony")[,1:2])
+
+ss_out_traj <- SlingshotDataSet(sim_traj)
+
+ss_df_traj <- tidy_ss_output(ss_out_traj) %>% 
+  mutate(curve1_lambda = max(curve1_lambda) - curve1_lambda,
+         pseudotime = curve1_lambda/max(curve1_lambda)*100,
+         #pseudotime_bin = round(pseudotime) %>% as.character(),
+         pseudotime_bin = cut(pseudotime,103) %>% as.integer,
+         tissue = srt_traj$tissue[cell_id],
+         citrin_state = srt_traj$citrin_state[cell_id],
+         fish = srt_traj$fish[cell_id],
+         pool = srt_traj$pool[cell_id]) %>% 
+  arrange(pseudotime) %>%
+  #rename the 100 bins from 1 to 100
+  mutate(pseudotime_bin = rep(seq_along(rle(pseudotime_bin)$values), rle(pseudotime_bin)$lengths) %>% as.character())
+
+#add clusters from all cells 
+ss_df_traj <- ss_df_traj %>% 
+  left_join(srt_obj@meta.data[glue("res_0.05")] %>% rownames_to_column("cell_id"))
+```
+
+Figure 3e
+```{r}
+fig_3_zfish_traj <- ggplot(ss_df_traj)+
+  ggrastr::geom_point_rast(aes(harmony_1, harmony_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(harmony_1, harmony_2, color = pseudotime),
+             size = 1)+
+  geom_path(aes(curve1_harmony_1, curve1_harmony_2))+
+  coord_fixed()+
+  annotate(geom = "text",
+         size = 5,
+         label = glue("n = {scales::comma(nrow(ss_df_traj))} cells"),
+         x = min(ss_df_traj$harmony_1)+12, y = min(ss_df_traj$harmony_2)+5)+
+  labs(x = "Harmony 1", y = "Harmony 2")+
+  viridis::scale_color_viridis(option = "A", breaks = c(0, 100))+
+  guides(color = guide_colourbar(title = "Pseudotime", title.position = "top", direction = "horizontal"))+
+  theme(legend.position = c(0.02,0.93))
+```
+
+Figure 3f
+```{r}
+#n cells density plot count
+fig_3_zfish_traj_citrin_state_density_counts <- ss_df_traj %>% 
+  mutate(citrin_state = factor(citrin_state, levels = c("WKM", "HI", "INT", "NO")),
+         Sort = ifelse(citrin_state == "WKM","WKM","Sorts")) %>% 
+  ggplot()+
+  geom_density(aes(x = pseudotime,y= ..count.., color = citrin_state, fill = citrin_state), size = 1)+
+  scale_color_manual(values = c("NO" = "#fde0dd",
+                                "INT" =  "#fa9fb5",
+                                "HI" = "#dd3497",
+                                "WKM" = "grey80"),
+                     limits = c("NO", "INT", "HI","WKM"),)+
+  scale_fill_manual(values = alpha(c("NO" = "#fde0dd",
+                              "INT" =  "#fa9fb5",
+                              "HI" = "#dd3497",
+                              "WKM" = "grey80"),0.1),
+                   limits = c("NO", "INT", "HI","WKM"))+
+     geom_text(data = data.frame(x = c(0, 0),
+                              y = c(250, 250),
+                              Sort=c("Sorts", "WKM"),
+                              labels = c("Sorts", "Unsorted kidney marrow")),
+            aes(x,y,label = labels), size = 6, color = "black", hjust = 0)+
+  geom_text(data = data.frame(x = c(80, 72, 53),
+                              y = c(154, 164, 280),
+                              Sort=rep("Sorts",3),
+                              labels = c("HI", "INT", "NO")),
+            aes(x,y,label = labels),size = 5, color = "black")+
+    labs(x = 'Pseudotime', y = "counts")+
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+        legend.position = "none")+
+    facet_grid(Sort~.)+
+  labs(fill = "Sorts")
+
+```
+
+Figure 3g
+```{r}
+fig_3_zfish_traj_mmp9_lyz <- ss_df_traj %>%
+  mutate(mmp9 = srt_traj@assays$SCT@data["mmp9",cell_id],
+         lyz = srt_traj@assays$SCT@data["lyz",cell_id]) %>%
+  pivot_longer(c(mmp9, lyz), names_to = "gene_symbol", values_to = "expression") %>% 
+  ggplot(aes(pseudotime, expression, color = citrin_state))+
+  ggrastr::geom_point_rast( alpha = 0.4)+
+   geom_text(data = data.frame(x = c(3, 3),
+                          y = c(6, 3.5),
+                          gene_symbol=c("lyz", "mmp9"),
+                          labels = c("lyz", "mmp9")),
+             aes(x,y,label = labels),
+             size = 6, color = "black",hjust = 0)+
+   scale_color_manual(values = c("NO" = "#fde0dd",
+                                "INT" =  "#fa9fb5",
+                                "HI" = "#dd3497",
+                                "WKM" = "grey80"),
+                     limits = c("NO", "INT", "HI","WKM"),)+
+  guides(colour = guide_legend(nrow = 4,
+                               override.aes = list(size = 2,alpha = 1)))+
+  geom_smooth(color = "black")+
+    theme(legend.position = "bottom")+
+  labs(x = 'Pseudotime', y = "Normalized expression", color = "Sorts")+
+  theme(legend.position = c(0.85,0.97),
+        strip.background = element_blank(),
+        strip.text = element_blank())+
+  facet_grid(gene_symbol~., scales = "free_y")
+```
+
+Supplementary Figure 3h
+```{r}
+fig_3_cc_sort <- ss_df_traj %>%
+  left_join(srt_traj@meta.data %>% dplyr::select(-cell_id) %>% rownames_to_column("cell_id"), by = c("cell_id", "citrin_state")) %>% 
+  dplyr::select(cell_id, pseudotime, Phase, citrin_state, S.Score, G2M.Score) %>%
+  pivot_longer(-c(cell_id,Phase,citrin_state,pseudotime)) %>% 
+  filter(citrin_state != "WKM") %>% 
+  mutate(citrin_state = factor(citrin_state, levels = c("NO", "INT","HI"))) %>% 
+  ggplot(aes(citrin_state, fill = Phase))+
+  geom_bar(position = position_fill())+
+  labs(x = "Sorts", y = "Cells in phase / total", fill = "")+
+  scale_y_continuous(labels = scales::percent_format())
+
+```
+
+Supplementary Figure 3i
+```{r}
+clusters <- srt_obj@reductions$umap@cell.embeddings %>%
+  cbind(srt_obj@meta.data)%>%
+  as.data.frame() %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  rownames_to_column("cells") %>% 
+  mutate(neutrophils = ifelse(cells %in% ss_df_traj$cell_id, "Neutrophils", "else"),
+         cluster = ifelse(res_0.05 %in% c(0,1),"Major cluster","Other clusters")) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 0.5, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = cluster),
+             size = 0.2)+
+  gghighlight(neutrophils == "Neutrophils",
+              unhighlighted_params = aes(color = "grey80"))+
+  guides(colour = guide_legend(ncol = 1,
+                               override.aes = list(size = 4)))+
+    scale_y_continuous(expand = expansion(add = c(1,3)))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+10,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.5,
+           arrow = arrow(angle = 15, ends = "last", type = "closed",length = unit(0.05, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+10,
+           colour = "black",
+           size = 0.5,
+           arrow = arrow(angle = 15, ends = "last", type = "closed",length = unit(0.05, "inches")))+
+    scale_colour_manual(values = c("#54278f","#c2a5cf"))+
+  labs(color = "Clusters")+
+  theme(axis.ticks = element_blank(),
+        legend.position = "none",
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+neut_percent <- ss_df_traj %>% 
+  mutate(state = ifelse(citrin_state == "WKM","Unsorted","Sorted"),
+         cluster = ifelse(res_0.05 %in% c(0,1),"Major cluster","Other clusters")) %>%
+  group_by(state, cluster) %>%
+  summarize(n = n()) %>% 
+  ungroup() %>% 
+  group_by(state) %>% 
+  mutate(percent = scales::percent(n/sum(n)),
+         y = sum(n)-500) %>% 
+  ungroup() %>% 
+  filter(cluster== "Major cluster")
+
+bars <- ss_df_traj %>% 
+  mutate(state = ifelse(citrin_state == "WKM","Unsorted","Sorted"),
+         cluster = ifelse(res_0.05 %in% c(0,1),"Major cluster","Other clusters")) %>% 
+  ggplot()+
+  geom_bar(aes(state, fill = cluster),position = position_stack(),width = 0.8)+
+  geom_text(data = neut_percent, aes(state, y, label = percent), color = "white", size = 4.25)+
+  scale_fill_manual(values = c("#54278f","#c2a5cf"))+
+  labs(y = "# Neutrophils", x = "", fill = "")+
+  theme(legend.position = "top",
+        aspect.ratio = 1.75/1)
+  
+neutrophil_clusters_n_bars <- bars + inset_element(clusters, left = 0.5, bottom = 0.5, right = 1, top = 1)
+```
+
+Supplementary Figure 3j
+```{r}
+bars_n_all <-  srt_obj@meta.data %>%
+  mutate(x = ifelse(ref1_neut_sub=="neutrophils"&ref2_neut_sub=="neutrophils", "Neutrophils", "Others")) %>% 
+  dplyr::count(x) %>%
+  mutate(percent = n/sum(n),
+        percent = scales::percent(percent)) %>%
+  ggplot()+
+  geom_col(aes("Cell population", n, fill = x),position = position_stack())+
+  geom_text(aes("Cell population", n, label = percent), color = "white", size = 6, nudge_y = -1000)+
+  scale_fill_manual(values = c("#54278f","grey90"))+
+  labs(y = "# Cells", x = "", fill = "")+
+  theme(legend.position = "top",
+        aspect.ratio = 1.75/1)
+```
+
+Differential gene expression using tradeSeq
+```{r zebrfish_traj_GAM, cache=TRUE}
+## ---- fit_tradeSeq_GAM_traj
+#high expression genes (3 or more reads, in 5 or more cells)
+top_expr_genes <- apply(srt_traj@assays$SCT@counts>=3, 1, sum)
+top_expr_genes <- names(top_expr_genes)[top_expr_genes>=5]
+#exclude ribosomal and mitochondrial genes
+model_genes <- str_subset(top_expr_genes, "^mt-|^r[prls]+[0-9]",negate = TRUE)
+
+#fit genes using GAM to the lineage
+sim_traj <- tradeSeq::fitGAM(srt_traj@assays$SCT@counts[,ss_df_traj$cell_id],
+                        pseudotime = ss_df_traj$curve1_lambda,
+                        cellWeights = rep(1, nrow(ss_df_traj)),
+                        genes = model_genes,
+                        nknots = 6
+                        )
+
+assoc_res_traj <- associationTest(sim_traj)
+```
+
+Smoothed expression of DEGs
+```{r}
+## ---- diff_associated_genes_traj
+diff_traj <- assoc_res_traj %>%
+    mutate(pvalue_adj = p.adjust(pvalue, method = "BH")) %>% #adjust for multiple testing
+    rownames_to_column("gene_symbol") %>% 
+    filter(pvalue_adj < 0.001) %>%
+    arrange(desc(waldStat)) %>%
+    head(1500)
+```
+
+Transcription factors
+```{r}
+## ---- TFs
+#download transcription factors in zebrafish
+#animalTFD3_zfish <- "http://bioinfo.life.hust.edu.cn/static/AnimalTFDB3/download/Danio_rerio_TF"
+animalTFD3_zfish <- "Danio_rerio_TF.txt"
+zfish_tfs <- read_delim(animalTFD3_zfish,delim = "\t") %>% 
+  dplyr::rename(gene_symbol=Symbol)
+#stefanie selected genes
+stefanie_neut_genes_df <- read_csv("2203_neutrophil_genes_stefanie.csv") %>%
+  filter(zfish %in% model_genes)
+stefanie_regulators <- stefanie_neut_genes_df %>%
+  filter(group == "regulators") %$%
+  zfish
+#TFs that are also DEGs
+tf_DEG <- union(zfish_tfs$gene_symbol,stefanie_regulators) %>% #union of TFs from Stefanie and animalTFD3
+  intersect(diff_traj$gene_symbol)
+
+#human
+human_tfs <- read_csv("http://humantfs.ccbr.utoronto.ca/download/v_1.01/DatabaseExtract_v_1.01.csv")
+homo_tfs <- human_tfs %>% 
+  dplyr::select("HGNC symbol", "Is TF?") %>% 
+  filter(`Is TF?`=="Yes") %>% 
+  dplyr::rename(human_symbol = "HGNC symbol") %>% 
+  dplyr::select(-`Is TF?`) %>% 
+  left_join(homo_df) 
+homo_tfs2 <- homo_tfs %>% 
+  group_by(human_symbol) %>% 
+  summarize(zebrafish = paste( ZFIN.symbol, collapse = ", ") %>% ifelse(.=="NA",NA,.),
+            mouse_symbol = paste( mouse_symbol, collapse = ", ")%>% ifelse(.=="NA",NA,.)) %>% 
+  ungroup()
+```
+
+Aggregated expression of DEGs based on standardized pseudotime
+```{r}
+aggr_avg_traj <- aggr_pseud_avg(seurat_obj=srt_traj,
+                                 ss_df=ss_df_traj,
+                                 genes=c(diff_traj$gene_symbol)) %>% 
+  as.data.frame %>%
+  rename_all(~paste0("traj", "_", .)) %>% 
+  as.matrix()
+
+aggr_avg_traj_annot <- aggr_pseud_avg(seurat_obj=srt_traj,
+                                 ss_df=ss_df_traj,
+                                 genes=diff_traj$gene_symbol,
+                                 return_obj = "annot") %>% 
+  mutate(pseudotime_bin = paste0("traj", "_", pseudotime_bin))
+
+aggr_avg_traj_scaled <- aggr_avg_traj %>% 
+  t() %>% 
+  scale() %>% 
+  t() %>% 
+  as.data.frame() %>% 
+  mutate_all(~ ifelse(abs(.)>2.5, 2.5* ./abs(.),.))
+```
+
+Dissimilarity between genes
+```{r, dtw_distance, cache = TRUE}
+dtw_dist <- proxy::dist(aggr_avg_traj_scaled, method = "dtw")
+```
+
+Partition zebrafish matuartion phases and gene modules
+```{r}
+#cluster columns and rows of the aggregated expression matrix 
+cell_avg_hc <- pheatmap::pheatmap(aggr_avg_traj_scaled,
+                   color = colorRampPalette(RColorBrewer::brewer.pal(name="PiYG",n=5))(100) %>% rev,
+                   scale = "none",
+                   cluster_rows = TRUE,
+                   cluster_cols = TRUE,
+                   clustering_method = "ward.D2",
+                   clustering_distance_rows = as.matrix(dtw_dist)[rownames(aggr_avg_traj_scaled),rownames(aggr_avg_traj_scaled)] %>% as.dist(),
+                   #clustering_distance_rows = as.dist(1-cor(t(aggr_avg_traj_scaled),method="spearman")),
+                   #clustering_distance_cols = "correlation",
+                   border_color = NA,
+                   show_rownames = TRUE,
+                   show_colnames = FALSE,
+                   fontsize_row = 2,
+                   silent = TRUE)
+
+#cut phases
+cell_avg_hc_labels <- paste0("phase_",cutree(cell_avg_hc$tree_col,4))
+names(cell_avg_hc_labels) <- names(cutree(cell_avg_hc$tree_col,4))
+
+#label cells with phases
+cell_clusters_avg_hc <- enframe(cell_avg_hc_labels,name = "pseudotime_bin", value = "phase") %>% 
+  left_join(aggr_avg_traj_annot) %>% 
+  dplyr::select(-pseudotime_bin) %>% 
+  column_to_rownames("cell_id")
+cell_clusters_avg_hc$phase %>% table
+
+#cut and rename modules clusters
+gene_avg_hc_labels <- cutree(cell_avg_hc$tree_row,3)
+gene_avg_hc_labels <- recode(gene_avg_hc_labels,`1`=1L, `3`=3L, `2`=2L)
+names(gene_avg_hc_labels) <- names(cutree(cell_avg_hc$tree_row,3))
+
+#define the range of pseudotime points withing each cluster
+gene_clusters_avg_hc <- split(names(gene_avg_hc_labels),gene_avg_hc_labels)  %>% 
+  stack() %>% 
+  dplyr::rename("module"="ind") %>% 
+  column_to_rownames("values") 
+gene_clusters_avg_hc$module <- paste0("module_",gene_clusters_avg_hc$module)
+gene_clusters_avg_hc$module %>% table
+gene_clusters_lst <- split(rownames(gene_clusters_avg_hc),gene_clusters_avg_hc$module)
+```
+
+Guess number of clusters
+Supplementary Figure 16 
+```{r, eval = TRUE}
+#number of phases
+phase_n <- maptree::kgs(cell_avg_hc$tree_col,
+                  as.dist(sqrt(2*(1-cor(aggr_avg_traj_scaled)))),
+                  maxclust=10)
+plot(names(phase_n),
+      phase_n,
+      xlab="# phases",
+      ylab="penalty")
+                    
+#number of modules
+module_n <- maptree::kgs(cell_avg_hc$tree_row,
+                  as.matrix(dtw_dist)[rownames(aggr_avg_traj_scaled),rownames(aggr_avg_traj_scaled)] %>% as.dist(),
+                  maxclust=10) 
+module_n_plt <-  plot(names(module_n),
+                      module_n,
+                      xlab="# modules",
+                      ylab="penalty")
+```
+
+Neutrophil genesets
+```{r, eval=FALSE}
+#split genes into genelists
+stefanie_neut_genes_lst <- stefanie_neut_genes_df %$%
+  split(zfish, group)
+stefanie_neut_genes_lst <- stefanie_neut_genes_lst[lengths(stefanie_neut_genes_lst)>1]#exclude list with 1 gene or list
+#expression matrix of each gene group
+group_expr_matrix_lst <- lapply(names(stefanie_neut_genes_lst), function(gene_group){
+    stefanie_genes <- stefanie_neut_genes_lst[[gene_group]]
+    aggr_avg_traj_stefanie <- aggr_pseud_avg(seurat_obj=srt_traj,
+                                   ss_df=ss_df_traj,
+                                   genes=stefanie_genes) %>% 
+    as.data.frame() %>%
+    rename_all(~paste0("traj", "_", .)) %>% 
+    as.matrix()
+    })
+names(group_expr_matrix_lst) <- names(stefanie_neut_genes_lst)
+#
+groups <- c("oxidative_stress", "inflammation")
+```
+
+Figure 4a
+1-order modules
+```{r}
+#manuscript figures
+#seriate order genes
+o <- seriate(aggr_avg_traj_scaled, method = "PCA")
+
+aggr_avg_traj_scaled[get_order(o, 1), ] %>%
+  pheatmap::pheatmap(color =  colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+                     scale = "none",
+                     cluster_rows = FALSE,
+                     cluster_cols = FALSE,
+                     #cutree_rows = 2,
+                     border_color = NA,
+                     show_rownames = FALSE,
+                     show_colnames = FALSE,
+                     annotation_col = cell_avg_hc_labels %>% enframe(value = "phase") %>% column_to_rownames("name"),
+                     annotation_row = gene_clusters_avg_hc,
+                     fontsize_col = 4,
+                     silent = TRUE)
+
+#order modules first, then maintain seriation order within each module
+gene_ser <- aggr_avg_traj_scaled[get_order(o, 1),] %>% rownames()
+module_ser <- gene_clusters_avg_hc[gene_ser,,drop = FALSE] 
+module_order <- gene_clusters_avg_hc[gene_ser,"module"] %>%
+  rle %$% 
+  data.frame(values = .$values,lengths=.$lengths,order=1:length(.$lengths))%>%
+  group_by(values) %>%
+  slice_max(lengths,with_ties = FALSE) %>%
+  arrange(order) %>% 
+  ungroup() %>% 
+  pull("values")
+
+gene_order <- lapply(module_order, function(x){
+  module_ser %>% 
+    filter(module == x) %>% 
+    rownames()
+  })
+#gene_order[[1]] <- gene_order[[1]] %>% unlist
+#gene_order[[4]] <- rev(gene_order[[4]]) %>% unlist
+gene_order <- gene_order %>% unlist
+```
+
+2- Plot heatmaps
+```{r}
+# annotation
+annot_colors <- list(module = c(module_1 = "#c7e9c0",
+                                module_2 = "#74c476",
+                                module_3 = "#006d2c"
+                                ),
+                     phase = c(phase_1 = "#dadaeb",
+                               phase_2 = "#9e9ac8",
+                               phase_3 = "#6a51a3",
+                               phase_4 = "#3f007d"
+                               )
+                     )
+#top annots
+column_annot <- HeatmapAnnotation(phase = cell_avg_hc_labels,
+                                  col = list(phase = annot_colors$phase),
+                                  simple_anno_size = unit(0.35, "cm"),
+                                  annotation_name_gp = gpar(fontsize = 8, fontface = "bold"),
+                                  annotation_label = "",
+                                  show_legend = FALSE)
+#top genes
+hm_gene <- diff_traj %>% 
+  left_join(gene_clusters_avg_hc %>% rownames_to_column("gene_symbol")) %>% 
+  group_by(module) %>%
+  slice_max(waldStat,n=5,with_ties = FALSE) %>% 
+  ungroup() %>% 
+  pull(gene_symbol)
+hm_gene <- gene_clusters_avg_hc[gene_order,"module",drop = FALSE] %>%
+  as.data.frame %>%
+  rownames_to_column("gene_symbol") %>%
+  group_by(module) %>%
+  mutate(x= seq(n()), x = x-n()/2, x = abs(x)) %>%
+  slice_max(x, prop = 0.075) %>%
+  ungroup %>% 
+  pull(gene_symbol) 
+hm_gene <- c(hm_gene, "mmp9", "selenoh","cebpb","myca","spi1b") %>% unique()
+hm_gene_label <- ifelse(!gene_order %in% hm_gene, "", gene_order)
+
+# bottom annotation
+d <- ss_df_traj %>%
+  dplyr::select(pseudotime_bin,citrin_state)  %>%
+  filter(citrin_state != "WKM") %>% 
+  dplyr::count(pseudotime_bin, citrin_state) %>% 
+  mutate( n = as.numeric(n)) %>% 
+  pivot_wider(names_from = citrin_state, values_from = n, values_fill = 0) %>% 
+  mutate(pseudotime_bin = as.numeric(pseudotime_bin)) %>% 
+  arrange(pseudotime_bin) %>% 
+  column_to_rownames("pseudotime_bin") %>% 
+  as.matrix() %>% 
+  apply(2, function(x){
+    loess(x ~ seq(length(x)), degree=1, span = 0.15)$fitted
+  })
+
+column_annot_bottom <- HeatmapAnnotation(sorts = anno_lines(d,
+                                                            gp = gpar(col = c("NO" = "#fde0dd","HI" = "#dd3497","INT" =  "#fa9fb5")[colnames(d)]),
+                                                            height = unit(1, "cm")),
+                                         pseudotime_bin =anno_simple(1:100,
+                                                                     col =  setNames(viridis::inferno(100),1:100),
+                                                                     height = unit(0.2, "cm")
+                                                                                     ),
+                                         simple_anno_size = unit(0.5, "cm"),
+                                         annotation_name_gp = gpar(fontsize = 6))
+
+
+#row annots
+module_annot <- rowAnnotation(module = gene_clusters_avg_hc[gene_order,"module"],
+                              col = list(module = annot_colors$module),
+                              show_legend = FALSE,
+                              annotation_label = "",
+                              simple_anno_size = unit(0.35, "cm"))
+#heatmap
+col_fun <- circlize::colorRamp2(4:-4, grDevices::hcl.colors(9,"RdYlBu"))
+expr_lgd <- Legend(col_fun = col_fun,
+              title = "Scaled\nexpression",
+              direction = "vertical",
+              at = c(-4, 4),
+              labels = c("low", "high"),
+              legend_height = unit(1.5, "cm"),
+              labels_gp = gpar(fontsize = 6),
+              title_gp = gpar(fontsize = 6))
+lgd_phase <- Legend(title = "",
+              labels = names(annot_colors$phase),
+              legend_gp = gpar(fill = annot_colors$phase))
+
+#Tall heatmap with all gene names
+pdf("hm_dtw_3_modules_1500_genes.pdf", width = 5, height = 10)
+aggr_avg_traj_scaled[gene_order,] %>%
+  as.data.frame() %>%
+  ComplexHeatmap::pheatmap(color =  colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+                     scale = "none",
+                     row_split = gene_clusters_avg_hc[gene_order,] ,
+                     cluster_rows = FALSE,
+                     cluster_cols = FALSE,
+                     border_color = NA,
+                     show_rownames = TRUE,
+                     show_colnames = FALSE,
+                     legend = FALSE,
+                     fontsize_row = 1,
+                     top_annotation = column_annot,
+                     left_annotation = module_annot,
+                     annotation_colors = annot_colors,
+                     row_title_gp = gpar(fontsize = 8, fontface = "bold"))%>% 
+  draw(padding = unit(c(9, 2, 4, 12), "mm"))
+  
+
+draw(expr_lgd,  x = unit(17.7, "cm"), y = unit(13, "cm"), just = c("right", "top"))
+    
+dev.off()
+
+#cut modules to separate heatmaps
+pdf("hm_cut_dtw_3_modules_1500_genes.pdf", width = 4, height = 9)
+s <- map(paste0("module_",1:3), function(x){
+  column_annot <- HeatmapAnnotation(phase = cell_avg_hc_labels,
+                                  col = list(phase = annot_colors$phase),
+                                  simple_anno_size = unit(0.2, "cm"),
+                                  annotation_name_gp = gpar(fontsize = 4, fontface = "bold"),
+                                  annotation_legend_param = list(phase = list(labels_gp = gpar(fontsize = 4),
+                                                                              title_gp = gpar(title = "",
+                                                                                              fontsize = 5))))
+
+  module_x_genes <- split(rownames(gene_clusters_avg_hc),gene_clusters_avg_hc$module)[[x]]
+  module_annot <- rowAnnotation(module = gene_clusters_avg_hc[gene_order%in%module_x_genes,"module"],
+                                col = list(module = annot_colors$module),
+                                show_legend = FALSE,
+                                annotation_label = "",
+                                simple_anno_size = unit(0.2, "cm"))
+
+  aggr_avg_traj_scaled[gene_order[gene_order%in%module_x_genes],] %>%
+    as.data.frame() %>%
+    ComplexHeatmap::pheatmap(color =  colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+                       scale = "none",
+                       cluster_rows = FALSE,
+                       cluster_cols = FALSE,
+                       border_color = NA,
+                       show_rownames = TRUE,
+                       show_colnames = FALSE,
+                       legend = TRUE,
+                       fontsize_row = 2,
+                       top_annotation = column_annot,
+                       #left_annotation = module_annot,
+                       annotation_colors = annot_colors,
+                       column_title = x) %>% 
+    draw(merge_legends = TRUE) 
+  })
+
+dev.off()
+
+#row annots
+top_tf_label <- reg_dunn %>%
+  group_by(regulatory_module) %>%
+  slice_max(statistic, n = 10) %>%
+  ungroup()%$%
+  regulatoryGene
+gene_label <- c(top_tf_label, "mmp9", "lyz", "il1b", "cxcr4b", "srg")
+hm_gene_label_annot <- rowAnnotation(foo = anno_mark(at = which(gene_order%in%gene_label),
+                                    labels = gene_order[which(gene_order%in%gene_label)],
+                                    labels_gp = gpar(fontsize = 5,
+                                                     fontface = ifelse(gene_order[which(gene_order%in%gene_label)]%in% top_tf_label,"bold.italic","italic")                                                     ),
+                                    link_gp = gpar(lwd = 0.1),padding =  unit(0.5, "mm")),
+                                    show_legend = FALSE)
+
+pdf("hm_small_dtw_3_modules_1500_genes_nat_com.pdf", width = 5, height = 5)
+fig_4_hm_small <- aggr_avg_traj_scaled[gene_order,] %>%
+  as.data.frame() %>%
+  ComplexHeatmap::pheatmap(color =  colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+                     scale = "none",
+                     row_split = gene_clusters_avg_hc[gene_order,] ,
+                     cluster_rows = FALSE,
+                     cluster_cols = FALSE,
+                     border_color = NA,
+                     show_rownames = FALSE,
+                     show_colnames = FALSE,
+                     legend = FALSE,
+                     row_title = "Gene module",
+                     column_title = "Maturation phase",
+                     top_annotation = column_annot,
+                     bottom_annotation = column_annot_bottom,
+                     left_annotation = module_annot,
+                     right_annotation = hm_gene_label_annot,
+                     annotation_colors = annot_colors,
+                     row_title_gp = gpar(fontsize = 9, fontface = "bold"),
+                     column_title_gp = gpar(fontsize = 9, fontface = "bold"))%>% 
+  draw(padding = unit(c(2, 2, 2, 11), "mm"))
+draw(expr_lgd,  x = unit(12.6, "cm"), y = unit(12.2, "cm"), just = c("right", "top"))
+decorate_annotation("module", {
+    grid.text(c("M3","M2","M1"),rep(0.18,4) , c(-4.4,-1.2,2.4), default.units = "cm",gp=gpar(fontsize=8, col="white"),rot=90)
+})
+decorate_annotation("phase", {
+    grid.text(c("P1","P2","P3","P4"),c(0.9,3,6,8) , rep(0.16,4), default.units = "cm",gp=gpar(fontsize=8, col="white"))
+})
+dev.off()
+```
+
+Figure 4d
+```{r}
+lapply(names(group_expr_matrix_lst), function(gene_group){
+  print(gene_group)
+  #expression matrix to the corresponding group
+  aggr_avg_traj_stefanie <- group_expr_matrix_lst[[gene_group]]
+  stefanie_genes <- rownames(aggr_avg_traj_stefanie)
+  #scaled matrix
+  aggr_avg_traj_scaled_stefanie <- aggr_avg_traj_stefanie %>% 
+    t() %>% 
+    scale() %>% 
+    t() %>% 
+    as.data.frame() %>% 
+    mutate_all(~ ifelse(abs(.)>2.5, 2.5* ./abs(.),.))
+  
+  #Available genes and their funcion labels
+  o <- seriate(aggr_avg_traj_scaled_stefanie[stefanie_genes,], method = "PCA")
+  o <- if(gene_group %in% groups){
+    get_order(o, 1)
+    }else{
+      rev(get_order(o, 1))
+    }
+  stefanie_genes <- stefanie_genes[o ] 
+ 
+  #
+  labels_row_sig <- ifelse(stefanie_genes%in%diff_traj$gene_symbol,
+                           paste0(stefanie_genes," *"),
+                           stefanie_genes)
+  aggr_avg_traj_scaled_stefanie[stefanie_genes,] %>%
+    as.data.frame() %>%
+    ComplexHeatmap::pheatmap(color =  colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+                       scale = "none",
+                       cluster_rows = FALSE,
+                       cluster_cols = FALSE,
+                       border_color = NA,
+                       show_rownames = TRUE,
+                       show_colnames = FALSE,
+                       legend = TRUE,
+                       labels_row = labels_row_sig,
+                       row_title = "Gene module",
+                       column_title = gene_group,
+                       top_annotation = column_annot,
+                       cellheight = unit(8, "mm"),
+                       fontsize_row = 18,
+                       #left_annotation = function_annot,
+                       #right_annotation = hm_gene_label_annot,
+                       #annotation_colors = annot_colors,
+                       row_title_gp = gpar(fontsize = 9, fontface = "bold"),
+                       column_title_gp = gpar(fontsize = 20, fontface = "bold"))
+  })
+```
+
+Figure 4b
+```{r}
+
+#DEG summary and heatmap values
+zfish_deg_summary <- aggr_avg_traj %>% 
+  as.data.frame() %>% 
+  rownames_to_column("gene_symbol") %>% 
+  pivot_longer(-c(gene_symbol),names_to = "pseudotime_bin", values_to = "vals") %>%
+  left_join(cell_avg_hc_labels %>% enframe(value = "phase", name = "pseudotime_bin")) %>% 
+  group_by(gene_symbol, phase) %>% 
+  summarize(phase_avg = mean(vals)) %>% 
+  ungroup() %>% 
+  pivot_wider( names_from = "phase", values_from = "phase_avg") %>% 
+  left_join(gene_clusters_avg_hc %>% rownames_to_column("gene_symbol")) %>%
+  left_join(diff_traj) %>% 
+  dplyr::select(gene_symbol, module,  waldStat:pvalue_adj,phase_1:phase_4) %>% 
+  dplyr::rename_with(~paste0(.x,"_avg"), starts_with("phase")) %>% 
+  mutate(gene_symbol = factor(gene_symbol, levels =gene_order ),
+         is_TF = gene_symbol %in% tf_DEG) %>% 
+  arrange(gene_symbol) %>% 
+  mutate(gene_symbol= as.character(gene_symbol)) %>% 
+  dplyr::select(gene_symbol,is_TF, everything()) %>%
+  left_join(aggr_avg_traj[gene_order,] %>% as.data.frame %>% rownames_to_column("gene_symbol") , by = "gene_symbol") 
+
+tall_df <- aggr_avg_traj_scaled %>% 
+  as.data.frame() %>% 
+  rownames_to_column("gene_symbol") %>% 
+  pivot_longer(-c(gene_symbol),names_to = "pseudotime_bin", values_to = "vals") %>%
+  left_join(cell_avg_hc_labels %>% enframe(value = "phase", name = "pseudotime_bin")) %>% 
+  group_by(gene_symbol, phase) %>% 
+  summarize(phase_avg = mean(vals)) %>% 
+  ungroup() %>% 
+  pivot_wider( names_from = "phase", values_from = "phase_avg") %>% 
+  left_join(gene_clusters_avg_hc %>% rownames_to_column("gene_symbol"))
+
+pdf("phase_module_pattern_summary_1500.pdf", 5,3)
+tall_df %>%
+  pivot_longer(-c(gene_symbol,module)) %>%
+   group_by(name, module) %>%
+    summarize(value = mean(value)) %>%
+     ungroup() %>%
+     mutate(module = factor(module, levels = paste0("module_", 3:1), labels = c(module_3 ="M3",module_2 ="M2",module_1 ="M1")),
+            phase = factor(name, labels = c(phase_1 ="P1",phase_2 ="P2",phase_3 ="P3",phase_4 ="P4"))) %>%
+     ggplot(aes(phase, module, fill= value))+
+     geom_tile()+
+     labs(fill = "Average scaled\nexpression")+
+     scale_x_discrete(position = "top")+
+     scale_fill_gradientn(colours = colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(7) %>% rev())+
+     theme(axis.line = element_blank(),
+           axis.ticks = element_blank(),
+           axis.title = element_blank())
+           
+dev.off()
+```

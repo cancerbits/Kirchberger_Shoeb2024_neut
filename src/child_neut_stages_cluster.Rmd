@@ -1,0 +1,443 @@
+---
+title: "child_neut_stages_cluster"
+author: "Mohamed_Shoeb"
+date: "1/2/2023"
+output: html_document
+---
+Dinh et al 2020
+```{r}
+#Dinh et al 2020
+dinh <- read.table("external_data/GSE153263/GSE153263_read_count.txt")
+dinh <- dinh[rowSums(dinh)>0,]
+dinh_metadata <- read.csv("external_data/GSE153263/GSE153263_metadata_shoeb.csv") %>%
+  mutate(stage = factor(stage, levels = unique(stage)),
+         sample_bio = str_replace(sample_id, "_S.+","")) %>%
+  arrange(stage)
+rownames(dinh_metadata) <- dinh_metadata$sample_id
+dinh <- dinh[,rownames(dinh_metadata)]
+#log2 normalize count data
+dinh_norm <- dinh %>% 
+  apply(2,function(x){
+    (x/sum(x))*1e6}) %>% 
+  as.data.frame %>% 
+  mutate_all(~log2(.x+1)) 
+  
+#map genes id to symbols
+httr::set_config(httr::config(ssl_verifypeer = FALSE))
+mart <- biomaRt::useMart('ENSEMBL_MART_ENSEMBL',host = "https://feb2023.archive.ensembl.org")
+mart <- biomaRt::useDataset("hsapiens_gene_ensembl", mart = mart)
+id_to_symbol_dinh <- biomaRt::getBM(
+  mart = mart,
+  attributes = c('entrezgene_id','hgnc_symbol'),
+  filter = 'entrezgene_id',
+  values = rownames(dinh))
+
+#add zebrafish symbol 
+id_symbol_df <- dinh %>%
+   rownames %>%
+   enframe(value = "entrezgene_id", name = NULL) %>%
+   left_join(id_to_symbol_dinh %>% mutate(entrezgene_id = as.character(entrezgene_id))) %>%
+   filter(entrezgene_id %in% rownames(dinh_norm),
+          !is.na(hgnc_symbol),
+          nchar(hgnc_symbol)!= 0) %>%
+   mutate(gene_id = ifelse(is.na(hgnc_symbol)|nchar(hgnc_symbol)==0,
+          entrezgene_id ,
+          hgnc_symbol),
+          gene_name_zfin = homo_df_abs$ZFIN.symbol[match(hgnc_symbol,homo_df_abs$human_symbol)]) %>%
+   filter(!is.na(gene_name_zfin))
+
+dinh_norm_aggr <- apply(dinh_norm[id_symbol_df$entrezgene_id, ], 2, function(x){
+  aggregate(x,
+            list(y = factor(id_symbol_df$gene_name_zfin,
+                levels = unique(id_symbol_df$gene_name_zfin))
+                ),
+            mean)$x
+  }) 
+
+#replace gene id with symbol
+rownames(dinh_norm_aggr) <-  unique(id_symbol_df$gene_name_zfin)
+dinh_norm_aggr <- dinh_norm_aggr[intersect(gene_order,rownames(dinh_norm_aggr)),]
+
+#stages average heatmap 
+dinh_stage_mean <- apply(dinh_norm_aggr[,dinh_metadata$sample_id ], 1, function(x){
+  aggregate(x,
+            list(y = factor(dinh_metadata$stage,
+                levels = unique(dinh_metadata$stage))
+                ),
+            mean)$x
+  }) %>%
+  t()
+colnames(dinh_stage_mean) <- unique(dinh_metadata$stage)
+```
+
+Kwok et al 2020
+```{r}
+#Bulk RNA-seq of myeloid progenitor populations
+kwok_bulk <- read.table("external_data/GSE151682_genecounts_20200601.txt/GSE151682_genecounts_20200601.txt",header = TRUE) %>%
+  dplyr::select(Geneid, ends_with(".bam")) %>%
+  dplyr::rename_all(~str_replace(.x, ".bam", "")) %>%
+  mutate(Geneid = str_replace(Geneid, "\\..+", "")) %>%
+  column_to_rownames("Geneid")
+kwok_metadata <- read_csv("external_data/GSE151682_genecounts_20200601.txt/GSE151682_metadata_shoeb.csv") %>%
+  separate(sample_group,
+           into = c("sample_id", "stage"),
+           sep = " ") %>%
+  as.data.frame()
+rownames(kwok_metadata) <- kwok_metadata$sample_id
+
+kwok_norm <- kwok_bulk %>% 
+  apply(2,function(x){
+    (x/sum(x))*1e6}) %>% 
+  as.data.frame %>% 
+  mutate_all(~log2(.x+1)) 
+  
+id_to_symbol <- biomaRt::getBM(
+  mart = useEnsembl("ensembl", dataset = "mmusculus_gene_ensembl",host = "https://feb2023.archive.ensembl.org"),
+  attributes = c("external_gene_name","ensembl_gene_id"),
+  filter = 'ensembl_gene_id',
+  values = rownames(kwok_bulk))
+
+#add zebrafish symbol 
+id_symbol_df <- kwok_bulk %>%
+   rownames %>%
+   enframe(value = "ensembl_gene_id", name = NULL) %>%
+   left_join(id_to_symbol) %>%
+   filter(ensembl_gene_id %in% rownames(kwok_bulk),
+          !is.na(external_gene_name),
+          nchar(external_gene_name)!= 0) %>%
+   mutate(gene_name_zfin = homo_df_xie$ZFIN.symbol[match(external_gene_name,homo_df_xie$mouse_symbol)]) %>%
+   filter(!is.na(gene_name_zfin))
+
+kwok_norm_aggr <- apply(kwok_norm[id_symbol_df$ensembl_gene_id, ], 2, function(x){
+  aggregate(x,
+            list(y = factor(id_symbol_df$gene_name_zfin,
+                levels = unique(id_symbol_df$gene_name_zfin))
+                ),
+            mean)$x
+  }) 
+#replace gene id with symbol
+rownames(kwok_norm_aggr) <-  unique(id_symbol_df$gene_name_zfin)
+
+#samples heatmap
+kwok_neus <- kwok_metadata %>% filter(stage %in% c("ly6c_neg_gmp", "proneu1", "proneu2", "preneu")) %>% rownames
+
+#stages average heatmap 
+kwok_neut_metadata <- kwok_metadata[kwok_neus,]
+kwok_stage_mean <- apply(kwok_norm_aggr[intersect(gene_order,rownames(kwok_norm_aggr)),kwok_neut_metadata$sample_id ], 1, function(x){
+  aggregate(x,
+            list(y = factor(kwok_neut_metadata$stage,
+                levels = unique(kwok_neut_metadata$stage))
+                ),
+            mean)$x
+  }) %>%
+  t()
+colnames(kwok_stage_mean) <- unique(kwok_neut_metadata$stage)
+```
+
+Muench et al 2020
+```{r}
+muench_fig_4_extended_sheets <- readxl::excel_sheets("external_data/Muench_2020/41586_2020_2227_MOESM14_ESM.xlsx")
+
+muench_fig_4_data <- lapply(muench_fig_4_extended_sheets,
+                            readxl::read_excel,
+                            path = "external_data/Muench_2020/41586_2020_2227_MOESM14_ESM.xlsx") %>%
+                            setNames(.,muench_fig_4_extended_sheets)
+
+#add zebrafish symbol 
+muench_ED4c <- bind_rows(muench_fig_4_data$ED4c,muench_fig_4_data$ED4h) %>%
+   mutate(gene_name_zfin = homo_df_xie$ZFIN.symbol[match(`Gene Symbol`,homo_df_xie$mouse_symbol)]) %>%
+   dplyr::select(gene_name_zfin, everything())%>%
+   filter(!is.na(gene_name_zfin))%>%
+   dplyr::select(-c(`Gene Symbol`, `Row Cluster`)) %>% 
+    group_by(gene_name_zfin) %>%
+    summarize_all(mean) %>%
+    ungroup() %>%
+    column_to_rownames("gene_name_zfin")
+muench_ED4c <- muench_ED4c[intersect(gene_order,rownames(muench_ED4c)), ]
+muench_ED4c_metadata <- muench_ED4c %>%
+ colnames %>%
+ setNames(., str_replace(.,"\\:.+","")) %>%
+ enframe() %>%
+ column_to_rownames("value") %>%
+ mutate(name = factor(name, levels = unique(name)))
+
+# 
+muench_wt <- read_table("external_data/Muench_2020/exp.WT-all.txt") %>%
+   mutate(gene_name_zfin = homo_df_xie$ZFIN.symbol[match(uid, homo_df_xie$mouse_symbol)],
+          uid = NULL) %>%
+   filter(!is.na(gene_name_zfin))%>%
+   group_by(gene_name_zfin) %>%
+   summarize_all(mean) %>%
+   ungroup() %>%
+   as.data.frame %>%
+   column_to_rownames("gene_name_zfin")
+muench_wt <- muench_wt[intersect(gene_order,rownames(muench_wt)), ]
+
+muench_avg <- aggregate(muench_wt[ ,str_replace(rownames(muench_ED4c_metadata), ".+:", "")] %>% t,
+               list(y = factor(muench_ED4c_metadata$name,
+                levels = unique(muench_ED4c_metadata$name))),
+               mean) %>%
+               t()
+colnames(muench_avg) <- muench_avg[1,]
+muench_avg <- muench_avg[-1,c("proNeu-1","proNeu-2","preNeu-1", "preNeu-2","preNeu-3","immNeu")]
+class(muench_avg) <- "numeric"
+```
+
+Calzetti F 2022 
+```{r}
+calzetti_fpkm <- read.csv("external_data/GSE175880/GSE175880_Expression_DESeq2_FPKM.csv",header = TRUE) %>%
+  mutate(gene_name_zfin = homo_df_abs$ZFIN.symbol[match(Gene.Symbol,homo_df_abs$human_symbol)]) %>%
+  filter(!is.na(gene_name_zfin)) %>%
+  dplyr::select(-c(Ensembl.gene.ID:Gene.Name)) %>%
+  group_by(gene_name_zfin) %>%
+  summarize_all(mean) %>%
+  ungroup() %>%
+  column_to_rownames("gene_name_zfin")
+
+calzetti_fpkm <- calzetti_fpkm[intersect(gene_order,rownames(calzetti_fpkm)),]
+calzetti_norm <- log2(calzetti_fpkm+1)
+calzetti_metadata <- calzetti_norm %>%
+ colnames %>%
+ setNames(.,str_replace(.,"_.+|GSE.+","")) %>% 
+ enframe(name = "stage", value = "sample_id") %>%
+ as.data.frame
+rownames(calzetti_metadata) <- calzetti_metadata$sample_id
+```
+
+Evrard
+```{r}
+evrard_norm_avg <- apply(evrard_norm_homo, 1, function(x){
+                         groups <- str_replace(names(x),"_[zt0-9_]+$","")
+                         gene <- split(x,groups)
+                         sapply(gene, mean)[groups%>% unique]
+                         }) %>%
+                         t()
+
+```
+
+Ramirez
+```{r}
+ramirez_norm_avg <- ramirez_norm %>%
+  rownames_to_column("gene_symbol") %>% 
+  pivot_longer(-gene_symbol) %>%
+  mutate(rep = str_sub(name,-2,-1),
+         t = str_replace(name, "_.+",""),
+         hr = str_extract(t,"[0-9]+") %>% as.numeric()) %>% 
+  arrange(hr) %>% 
+  mutate(t = factor(t, levels = unique(t))) %>% 
+  group_by(gene_symbol, t) %>% 
+  summarize(expr = mean(value)) %>%
+  ungroup() %>% 
+  arrange(t) %>% 
+  pivot_wider(names_from = "t", values_from = "expr") %>% 
+  column_to_rownames("gene_symbol")
+
+```
+
+Pseudo-bulk average of zebrafish trajectory by phase
+```{r}
+traj_phase_mean <- apply(aggr_avg_traj, 1, function(x){
+  aggregate(x,
+            list(y = factor(cell_avg_hc_labels,
+                levels = unique(cell_avg_hc_labels))
+                ),
+            mean)$x
+  }) %>%
+  t()
+colnames(traj_phase_mean) <- unique(cell_avg_hc_labels)
+traj_phase_scaled <- traj_phase_mean%>% 
+  t() %>%
+  scale %>%
+  t()%>%
+  na.omit()
+```
+
+Combine bulk datasets 
+```{r}
+bulk_lst <- list(Zebrafish.This_study = traj_phase_mean,
+                 Mouse.Muench_2020 = muench_avg,
+                 Mouse.Evrard_2018 = evrard_norm_avg,
+                 Human.Ramirez_2017 = ramirez_norm_avg,
+                 Human.Dinh_2020 = dinh_stage_mean,
+                 Mouse.Kwok_2020 = kwok_stage_mean,
+                 Human.Calzetti_2022 = calzetti_neut_mean
+                 )
+                 
+#Z-score separately for each dataset
+#A list of all the bulk neutrophil datasets separately scaled
+bulk_scale_lst <- lapply(bulk_lst,function(dataset){
+  dataset %>% 
+    t() %>%
+    scale %>%
+    t() %>%
+    as.data.frame
+  })
+#common genes across all bulk datasets
+bulk_genes <- lapply(bulk_lst,rownames)%>%
+  purrr::reduce(intersect)
+bulk_genes <- intersect(gene_order_ortho, bulk_genes)
+
+#A matrix of all bulk samples
+bulk_mean_expr_df <- lapply(bulk_lst,function(dataset){
+  dataset[bulk_genes,]
+  })%>% 
+  do.call(cbind, .) %>%
+  as.data.frame()
+
+bulk_scale_df <- lapply(bulk_scale_lst,function(dataset){
+  dataset[bulk_genes,]
+  })%>% 
+  do.call(cbind, .) %>%
+  as.data.frame()
+bulk_scale_df[bulk_scale_df>=1.5] <- 1.5
+bulk_scale_df[bulk_scale_df<=-1.5] <- -1.5
+
+#quantile normalization
+q_norm <- function(x){
+  df <- x[bulk_genes,]
+  #rank genes within each column
+  rnk <- apply(df,2,rank,ties.method="first")
+  #sort ascendingly 
+  srt <- apply(df,2,sort)
+  #compute row means
+  MN <- rowMeans(srt)
+  ## replace each row entry in the expression matrix with the mean of that row and reorder according to original ranking
+  df[,] <- apply(rnk,2,function(z) MN[z])
+  df[,] 
+  }
+
+##quantile normalization all
+bulk_quant_all <- q_norm(bulk_mean_expr_df)%>%
+    t() %>%
+    scale %>%
+    t() %>%
+    na.omit()
+
+x <- bulk_quant_all %>% colnames %>% str_split("\\.",simplify=TRUE)
+l <- split(colnames(bulk_quant_all), x[,2])
+bulk_quant_all_scale <- lapply(l, function(samples_names){
+  bulk_quant_all[,samples_names] %>%
+  t() %>%
+  scale %>%
+  t() %>%
+  as.matrix()
+  }) %>%
+  do.call(cbind,.) %>%
+  na.omit() #remove genes with NA values after scaling
+bulk_quant_all_scale <- bulk_quant_all_scale[,colnames(bulk_quant_all)]
+```
+
+Bulk datasets metadata
+```{r}
+bulk_metadata <- bulk_scale_df %>%
+  colnames %>%
+  enframe(name = NULL, value = "sample_id") %>%
+  separate(sample_id, into = c("species", "study", "stage"),sep = "\\.", remove = FALSE) %>%
+  column_to_rownames("sample_id") %>%
+  mutate(label = paste0(stage, "-", study),
+         label = str_replace_all(label, "_", " "))
+```
+
+Figure 7a
+```{r}
+df <- norm_lst$quants_all
+#lapply(norm_lst, function(df){
+#spearman distance
+cor_mat <- cor(df, method = "spearman")
+dist_cor <- as.dist(sqrt(2*(1-cor_mat)))
+
+#differentiation score in each dataset
+y <- bulk_metadata[rownames(cor_mat),"study"] %>% rle()
+stage_score <- lapply(y$lengths, function(x){
+  seq(0, 1, length.out = x)
+  }) %>%
+  unlist()
+names(stage_score) <- names(dist_cor)
+
+#cluster samples
+hc <- hclust(dist_cor, method = "ward.D2")
+
+#reorder dendrogram
+order_dend <- hc %>%
+  as.dendrogram() %>%
+  reorder(stage_score,
+          agglo.FUN = mean)
+order_hc <- order_dend %>%
+  as.hclust()
+
+#What's the optimal number of clusters?
+phase_n <- maptree::kgs(order_hc,
+                  dist_cor,
+                  maxclust=6)
+
+
+#heatmap annotation
+column_annot <- HeatmapAnnotation(Study = bulk_metadata$study,
+                                  Species = tolower(bulk_metadata$species),
+                                  col = list(Species = column_annot_cols$species,
+                                              Study = c(Calzetti_2022 = "#08519c", Kwok_2020 = "#ff7f00", Dinh_2020 = "#4292c6", Ramirez_2017 = "#c6dbef", Muench_2020 = "#d73027",Evrard_2018 = "#ffeda0", This_study = "#6a3d9a")
+                                              ),
+                                  annotation_name_side = "left")
+bulk_module_annot <- rowAnnotation(module = gene_clusters_avg_hc[rownames(df),"module"],
+                              col = list(module = annot_colors$module),
+                              show_legend = FALSE,
+                              show_annotation_name = FALSE,
+                              annotation_name_gp = ,
+                              simple_anno_size = unit(0.35, "cm"))
+n_split <- 3
+split_gap <- unit(1, "mm")
+ht <- ComplexHeatmap::Heatmap(df,
+                        col =  colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(100) %>% rev(),
+                        name = "Scaled\nexpression",
+                        cluster_columns = order_hc,
+                        cluster_rows = FALSE,
+                        show_row_names = FALSE,
+                        column_split = n_split,
+                        column_title = NULL,
+                        column_names_gp = gpar(fontsize = 8.5),
+                        top_annotation = column_annot,
+                        left_annotation = bulk_module_annot,
+                        column_labels = bulk_metadata[colnames(df), "stage"],
+                        column_gap = split_gap,
+                        row_title = glue::glue("Gene module\n(n = {nrow(df)} genes)"),
+                        row_title_gp= gpar(fontsize = 10), 
+                        width = 14,
+                        height = unit(3.5, "cm"))
+ht <- draw(ht, merge_legend = TRUE, column_dend_side = "top")
+co <- ComplexHeatmap::column_order(ht)
+ro <- ComplexHeatmap::row_order(ht)
+
+#zebrafish samples names
+zebrafish_phases <- bulk_metadata %>%
+  filter(species=="Zebrafish") %>%
+  rownames
+
+# Find columns in dendrogram
+dend_idx <- which(order.dendrogram(order_dend) %in% which(colnames(df) %in% zebrafish_phases))
+
+dend_clusts <- rep(seq_along(co), lengths(co))
+n_gaps <- dend_clusts[dend_idx]-1
+
+# Find left and righ of each column on heatmap (x and y axes go from 0 to 1)
+col_width <-  (1/length(co[[1]])) * unit(1, "npc")
+right <- dend_idx*col_width + unit(n_gaps, "mm")
+
+# Rectangle specs
+box_col <- 'black'
+box_width <- 1.75
+box_lty <- 2
+
+
+# Decorate heatmap with rectangle
+decorate_heatmap_body("Scaled\nexpression", { for (i in 1:length(zebrafish_phases)) {
+  grid.rect(right[i], unit(1, "npc"),
+      width = col_width,
+      height = unit(1, "npc"),
+      gp = gpar(lwd = box_width, lty = box_lty),
+      just = c("right", "top")
+      )
+    }
+  })
+
+#})
+```

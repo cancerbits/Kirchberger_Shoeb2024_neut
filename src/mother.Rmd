@@ -1,0 +1,186 @@
+---
+title: "neut_zfish"
+author: "Mohamed_Shoeb"
+date: "6/5/2020"
+plots: 
+ html_document:
+  code_folding: hide
+  toc: true
+  toc_float: true
+  theme: united
+always_allow_html: true
+---
+
+```{r setup, include=FALSE}
+#project setup
+project_name <- "neut_zfish"
+base_dir <- "/path/to/home/"
+out_dir <- file.path(base_dir,"out",project_name, "results")
+input_dir <- file.path(base_dir,"data",project_name)
+data_dir <- file.path(input_dir, "data", "cellranger_reporters")
+metadata_dir <- file.path(input_dir, "metadata")
+genome_dir <- file.path(base_dir,"resources","genomes")
+
+#report options
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      cache.lazy = FALSE,
+                      message=FALSE,
+                      warning=FALSE,
+                      dev = "png",
+                      cache.path = file.path(out_dir,"report_reporters","cache/"),
+                      fig.path = file.path(out_dir,"report_reporters","files/"))
+knitr::opts_knit$set(root.dir = here::here())
+
+options(width=100)
+
+```
+
+```{r run in the terminal, eval = FALSE, include = FALSE}
+rmarkdown::render(output_file = stringr::str_replace_all(date(),c(" +"="-", ":"="_")),
+                  input = here::here("src","mother.Rmd"),
+                  output_dir = file.path(out_dir,"report_reporters","html/"))
+```
+
+# Load libraries
+```{r child = here::here("src","child_libraries.Rmd"), eval=TRUE}
+
+```
+
+# Set parameters
+```{r child = here::here("src", "child_paramters.Rmd"), eval=TRUE}
+
+```
+
+# Define functions
+```{r child = here::here("src", "child_functions.Rmd"), eval=TRUE}
+
+```
+
+# Read data
+```{r child = here::here("src", "child_read_input.Rmd"), eval=FALSE}
+
+```
+
+# MULTI-seq classification
+```{r child = here::here("src", "child_multiseq_classification.Rmd"), eval=FALSE}
+
+```
+# Add multiseq classes
+```{r child = here::here("src", "child_expand_metadata.Rmd"), eval=FALSE}
+
+```
+# Quality control
+```{r child = here::here("src", "child_qc.Rmd"), eval=FALSE}
+
+```
+
+# Impute negatives
+```{r child = here::here("src", "child_impute_negatives.Rmd"), eval=FALSE}
+
+```
+
+# Dimensionlity reduction
+plots: Figure 3b, Supplementary Figure 3bcdefg
+```{r child = here::here("src", "child_dim_reduction.Rmd"), eval=FALSE}
+
+```
+
+# Cell classification based on available zebrafish references
+plots: Figure 3cd
+```{r child = here::here("src", "child_ref_classification.Rmd"), eval=FALSE}
+
+```
+
+# Zebrafish neutrophil subset
+```{r child = here::here("src", "child_zebrafish_neutrophils.Rmd"), eval=FALSE}
+
+```
+
+# Map homologous genes across species
+```{r child = here::here("src", "child_homologs_mapping.Rmd"), eval=TRUE}
+
+```
+
+# Infere zebrafish trajectory
+plots: Figure 3efg, Figure 4abd, Supplementary Figure 3hij, Supplementary Figure 16
+```{r child = here::here("src", "child_trajectory_inference_zebrafish.Rmd"), eval=TRUE}
+
+```
+
+# Putative TF regulators and GSEA
+plots: Figure 4c, Figure 5abc, Supplementary Figure 5
+```{r child = here::here("src", "child_gene_regulatory_network.Rmd"), eval=TRUE}
+
+```
+
+# Trajectory inference of mouse datasets
+plots: Figure 7c
+```{r child = here::here("src", "child_trajectory_inference_mouse.Rmd"), eval=TRUE}
+
+```
+
+# Trajectory inference of human datasets
+plots: Figure 7d
+```{r child = here::here("src", "child_trajectory_inference_human.Rmd"), eval=TRUE}
+
+```
+
+# Compute and merge cross-correlation values of each dataset
+plots: Supplementary 7abcde
+```{r child = here::here("src", "child_merge_cc.Rmd"), eval=TRUE}
+
+```
+
+# Merge trajectory data across species
+plots: Figure 7 bottom heatmap
+```{r child = here::here("src", "child_merge_heatmaps.Rmd"), eval=TRUE}
+
+```
+
+# Prepocessing for neuroblastoma deconvolution
+plots:  Supplementary Figure 8b
+```{r child = here::here("src", "child_deconv_preprocess.Rmd"), eval=TRUE}
+
+```
+
+# Deconvoltion of human neuroblatoma data using zebrafish neutrophil modules
+plots:  Figure 8a, Supplementary Figure 9ab
+```{r child = here::here("src", "child_bulk_deconv_ssgsea_consistent_specific_degs.Rmd"), eval=TRUE}
+
+```
+
+
+# Clustering analysis of neutrophil maturation stages across species
+plots:  Figure 7a
+```{r child = here::here("src", "child_neut_stages_cluster.Rmd"), eval=TRUE}
+
+```
+
+# Investigate the cluster of cycling neutrophils
+plots:  Supplementary Figure 3klm, 
+```{r child = here::here("src", "child_cycling_cluster.Rmd"), eval=TRUE}
+
+```
+
+# Deconvolution of reference datasets based on neutrophil modules
+plots: Supplementary Figure 10ab, Supplementary Figure 11, Supplementary Figure 12, Supplementary Figure 13, Supplementary Figure 14
+```{r child = here::here("src", "child_ref_modules_deconv.Rmd"), eval=TRUE}
+
+```
+
+# Trajectory inference methods comparisons
+plots: Supplementary Figure 4
+```{r child = here::here("src", "child_traj_comp.Rmd"), eval=TRUE}
+
+```
+
+#  Generate figures and supplementary tables
+```{r child = here::here("src", "child_manuscript_tables.Rmd"), eval=TRUE}
+
+```
+
+```{r}
+knitr::knit_exit()
+```
+

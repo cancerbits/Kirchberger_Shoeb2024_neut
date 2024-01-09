@@ -1,0 +1,218 @@
+---
+title: "child_gene_regulatory_network"
+author: "Mohamed_Shoeb"
+date: "1/9/2022"
+output: html_document
+---
+
+### GRN analysis
+```{r}
+#gene modules
+geneset <- gene_clusters_lst %>%
+ stack %>%
+ dplyr::rename("module" = "ind",
+               "gene_name" = "values")
+
+#candidate TFs
+geneset_tf <- geneset$gene_name[geneset$gene_name%in%tf_DEG] #define regulatory genes
+#candidate targets
+geneset_target <- geneset$gene_name[!geneset$gene_name%in%geneset_tf] #define target genes
+#gene-gene distance 
+dtw_mt <- as.matrix(dtw_dist)[rownames(aggr_avg_traj_scaled),rownames(aggr_avg_traj_scaled)]
+#calculate specificity of a TF to target genes across all modules
+all_tf_weight_module_df <- dtw_mt[geneset_target, geneset_tf] %>% 
+  as.data.frame() %>% 
+  rownames_to_column("row") %>%
+  pivot_longer(-row) %>% 
+  dplyr::rename(regulatoryGene = "name", targetGene = "row", dist = "value") %>% 
+    left_join(geneset %>% rename(target_module = "module"), by = c("targetGene"="gene_name")) %>%
+    left_join(geneset %>% rename(regulatory_module = "module"), by = c("regulatoryGene"="gene_name")) %>%
+    mutate(target_module = factor(target_module,labels = c(module_1 ="M1",module_2 ="M2",module_3 ="M3"))) %>% 
+  mutate(regulatory_module = factor(regulatory_module,labels = c(module_1 ="M1",module_2 ="M2",module_3 ="M3"))) %>% 
+  #filter(regulatory_module == "M2") %>%
+  group_by(targetGene) %>%
+  mutate(weight = 1-(dist/max(dist)),
+         #weight = -scale(weight)
+         regulatoryGene = as.character(regulatoryGene)) %>%
+  ungroup() 
+
+#dunn test compare modules
+reg_dunn <- lapply(paste0("M",1:3), function(module_i){
+  all_tf_weight_module_df   %>% 
+  mutate(module = ifelse(target_module==module_i, module_i, "others"),
+         module =  factor(module, levels = c("others", module_i)))%>%
+  group_by(regulatoryGene) %>%
+  rstatix::dunn_test(weight ~ module, p.adjust.method = "BH") %>%
+  ungroup() 
+  })%>%
+  bind_rows%>%
+  left_join(geneset %>% rename(regulatory_module = "module"), by = c("regulatoryGene"="gene_name"))
+
+reg_dunn_all <-   reg_dunn %>%
+  group_by(regulatoryGene) %>%
+  filter(statistic == max(statistic))%>%
+  ungroup()%>%
+  mutate(statistic = ifelse(str_detect(regulatory_module, "module_(1|2)"), -statistic, statistic)) %>%
+  arrange(regulatory_module, statistic) %>%
+  as.data.frame
+
+reg_dunn_top3 <- reg_dunn %>%
+  group_by(regulatory_module) %>%
+  slice_max(statistic, n = 3) %>%
+  ungroup() %>%
+  mutate(statistic = ifelse(str_detect(regulatory_module, "module_(1|2)"), -statistic, statistic)) %>%
+  arrange(regulatory_module, statistic) %>%
+  as.data.frame
+
+```
+
+Regulons line plot for all TFs
+```{r}
+tf_target_dtw <- dtw_mt[geneset_target,geneset_tf]
+#Tf with minimum distance to each target
+target_min_tf <- split(rownames(tf_target_dtw),colnames(tf_target_dtw)[apply(tf_target_dtw,1,which.min)])
+
+assoc_reg_ls <- lapply(gene_order[gene_order%in%names(target_min_tf)], function(x){
+  aggr_avg_traj[c(x,target_min_tf[[x]]),]%>%
+    t() %>%
+    as.data.frame%>%
+    rownames_to_column("t") %>%
+    mutate(t = as.numeric(str_extract(t,"[0-9]+")),
+           regulator = x) %>% 
+    pivot_longer(-c(t,regulator)) %>% 
+  mutate(gene_type = ifelse(name %in% names(target_min_tf),"regulator", "target"))
+  })
+```
+
+### enrichement analysis
+```{r eval = FALSE}
+#msig
+##retreive genesets
+subcats <- c("CP:KEGG",
+             "GO:BP",
+             "CP:WIKIPATHWAYS",
+             #"IMMUNESIGDB",
+             "CP:REACTOME")
+msig_db <- msigdbr::msigdbr(species = "Danio rerio") %>%
+   filter(gs_subcat %in% subcats | gs_cat == "H") %>%
+   mutate(gs_subcat = ifelse(gs_cat == "H", "HALLMARK", gs_subcat)) %>%
+  dplyr::distinct(gene_symbol, gs_subcat, gs_name) %>%
+  filter(gene_symbol %in% rownames(sim_traj)) %>% #only include genes that are part of the data 
+  group_by(gs_name) %>%
+  filter(n()>=20) %>% #exclude genesets less than 20 genes
+  ungroup()%>%
+  split(., .$gs_subcat) %>%
+  lapply(function(subcat){
+    split(subcat$gene_symbol, subcat$gs_name)
+    })
+##run hypergeometric test
+hypeR_obj_msig <- lapply(names(gene_clusters_lst), function(day_reg){
+  lapply(msig_db, function(subcat){
+    day <- str_extract(day_reg, "D..")
+    x <- hypeR::hypeR(gene_clusters_lst[[day_reg]],
+                 subcat,
+                 background = rownames(sim_traj))
+                 })
+                 }) %>%
+                 setNames(., names(gene_clusters_lst))
+##hypergeometric test results
+hypeR_res_msig <- lapply(hypeR_obj_msig, function(module){
+  lapply(module, function(subcat){
+    subcat$data
+    }) %>%
+    bind_rows(.id = "group") %>%
+    arrange(fdr)
+    })
+```
+
+Figure 5b
+```{r}
+all_tf_weight_module_df %>%
+  filter(regulatoryGene %in% reg_dunn_all$regulatoryGene) %>%
+  mutate(regulatoryGene = factor(regulatoryGene, levels = rev(reg_dunn_all$regulatoryGene))) %>%
+  ggplot(aes(weight,regulatoryGene, fill = target_module), color = "black")+
+  ggridges::geom_density_ridges(scale = 1,
+                                  size = 0.1,
+                                  quantile_lines = TRUE,
+                                  quantiles = 2,
+                                  vline_size = 0.75)+ 
+    scale_fill_manual(values = alpha(annot_colors$module %>% setNames(paste0("M",1:3)),0.8))+
+    labs(x = "Module specificity\n(scaled DTW similarity)", y = "Transcription factor", fill = "Target module")+
+    facet_grid(regulatory_module~.,scales = "free_y",  space = "free")+
+    theme(legend.position = "top",
+          strip.text = element_text(hjust = 0),
+          strip.background = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text = element_text(size = 8))
+```
+
+Figure 5c
+```{r}
+map(assoc_reg_ls , function(assoc_reg_df){
+  ggplot()+
+  geom_line(data = assoc_reg_df %>% filter(gene_type == "target"),
+               aes(t,value, group = name, color= "Target", lty = "Target"),
+               size = 0.1)+
+  geom_line(data = assoc_reg_df %>% filter(gene_type == "regulator"),
+               aes(t,value, group = name, color= "Regulator", lty = "Regulator"),
+               size = 0.4)+
+  stat_summary(data = assoc_reg_df ,
+               aes(t,value, color= "Avg", lty = "Avg"),
+               fun = "mean",
+               size = 0.4,
+               geom = "line"
+               )+
+  labs(x = "Pseudotime", y = "Normalized expression")+
+  scale_color_manual(name = "",
+                      values = c("Target" = "grey60", "Regulator" = "#F8766D", "Avg" = "black"),
+                      guide = guide_legend(direction = "horizontal" ))+
+  scale_linetype_manual(name = "",
+                        values=c("Target"= 1,"Regulator" = 1, "Avg" = 2),
+                      guide = guide_legend(direction = "horizontal" ))+                        
+  facet_wrap(regulator~., scales = "free_y", ncol = 1,)+
+  labs (color = "")+
+  theme(legend.position = c(0.3,1),
+        strip.text = element_text(hjust = 0,face = "bold", size = 15),
+        strip.background = element_blank(),
+        axis.ticks = element_blank())
+
+  })
+```
+
+Figure 4c
+```{r}
+# top fdr; x axis GeneRatio
+lapply(c(subcats,"HALLMARK") , function(subcat_i){
+  lapply(hypeR_res_msig, function(module){
+  module %>%
+    filter(group == subcat_i)%>%
+    mutate(GeneRatio = overlap/geneset,
+          sig = ifelse(fdr<0.1,"*","")) %>% 
+    arrange((fdr)) %>%
+    head(5)%>%  #top 5 hits
+    arrange((GeneRatio))
+    }) %>% 
+    bind_rows(.id = "module") %>%
+    mutate(label = label %>% str_to_sentence() %>% str_replace_all("_"," "),
+         label = factor(label, levels = unique(label)),
+            module = factor(module,labels = c(module_1 ="M1",module_2 ="M2",module_3 ="M3"))) %>% 
+    ggplot(aes(GeneRatio, label, fill = group))+
+    geom_col()+
+      geom_text(aes(0, label, label = label), size = 4,hjust = 0)+
+      geom_text(aes(GeneRatio, label, label = sig), size = 5,hjust = 0)+
+      facet_wrap(module~., ncol = 1, scales = "free_y")+
+    scale_fill_manual(values = c("CP:KEGG" = "#e7298a", "CP:REACTOME" = "#7570b3", "GO:BP" = "#1b9e77", "HALLMARK"= "#ff7f00"))+
+      guides(alpha = "none")+
+    labs( y = "", x = "Geneset overlap ratio")+
+  theme(title = element_text(size = 8, hjust = 0,face = "bold"),
+        strip.text = element_text(size = 8, hjust = 0,face = "bold"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 8),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.line.y = element_blank(),
+        strip.background = element_blank(),
+          axis.title = element_text(size = 9))
+})
+
+```

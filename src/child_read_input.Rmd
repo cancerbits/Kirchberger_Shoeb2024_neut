@@ -1,0 +1,455 @@
+---
+title: "child_read_input"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+
+## In house single cell RNA-seq data {.tabset}
+### zebrafish
+```{r zebrafish_10x, cache=TRUE}
+## ---- read_metadata
+clindata <- read_csv(file.path(metadata_dir,"metadata.csv")) %>%
+  mutate_all(as.factor) %>% 
+  mutate()
+
+barcode_rep <- clindata%>%
+  dplyr::select(sort_well, barcode_seq)%>%
+  mutate_all(as.character)%>%
+  deframe()%>%
+  split(.,names(.))
+
+## ---- find_input_path
+sample_path <- dir_ls(path=data_dir,
+                      recurs=TRUE,
+                      type ="directory",
+                      glob = "*/outs/filtered_feature_bc_matrix") %>%
+  as.character() %>% 
+  setNames(., str_split(.,"/",simplify=TRUE)[,12] %>% str_replace("_GEX.+", ""))
+
+barcode_path <- dir_ls(path=path(input_dir, "data","MF317_MULTISEQ_L4374/"),
+                       type = "file",
+                       glob = "*_R*") %>%
+  as.character() %>% 
+  split(., str_extract(.,"A."))
+
+## ---- read_10x
+sample_expr <- Read10X(sample_path)
+srt_obj <- CreateSeuratObject(counts = sample_expr,project = project_name)
+```
+## External single cell RNA-seq data {.tabset}
+### tang et al
+```{r ref1_10x, cache=TRUE}
+## ---- read_10x_ref1
+cell_metadata <- read_tsv(here("external_data","E-GEOD-100911/ExpDesign-E-GEOD-100911.tsv")) %>% 
+  rename_all(~ str_replace_all(.," ","_" )) %>%
+  rename_all(tolower) %>% 
+  dplyr::rename("cell_id" = "assay")
+
+sample_expr_ref1 <- Read10X(here("external_data","E-GEOD-100911/quantification-filtered-files/"))
+srt_obj_ref1 <- CreateSeuratObject(counts = sample_expr_ref1)
+srt_obj_ref1$cell_id <- rownames(srt_obj_ref1@meta.data)
+srt_obj_ref1@meta.data <- srt_obj_ref1@meta.data %>% 
+  left_join(cell_metadata, by = "cell_id")
+rownames(srt_obj_ref1@meta.data) <- srt_obj_ref1$cell_id 
+
+```
+### ref2
+```{r ref2_10x, cache=TRUE}
+## ---- read_10x_ref2
+cell_metadata <- read_tsv(here("external_data","E-MTAB-5530/E-MTAB-5530-experiment-metadata-files.zip")) %>% 
+  rename_all(~ str_replace_all(.," ","_" )) %>%
+  rename_all(tolower) %>% 
+  mutate(cell_id =  `comment[ena_run]`) %>% 
+  #column_to_rownames( "comment[ena_run]") %>% 
+  dplyr::select(cell_id,
+                `characteristics[organism]`:extract_name,
+                -`characteristics[organism]`) %>% distinct_all()
+
+sample_expr_ref_2 <- Read10X(here("external_data","E-MTAB-5530/quantification-raw-files/"))
+srt_obj_ref2 <- CreateSeuratObject(counts = sample_expr_ref_2)
+srt_obj_ref2$cell_id <- rownames(srt_obj_ref2@meta.data)
+srt_obj_ref2@meta.data <- srt_obj_ref2@meta.data %>% 
+  left_join(cell_metadata, by = "cell_id")
+rownames(srt_obj_ref2@meta.data) <- srt_obj_ref2$cell_id 
+
+```
+
+### xie et al
+```{r xie_10x, cache=TRUE}
+## ---- create_seurat_obj_from_xie_2020
+#https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137539
+
+##read_mouse_metadata
+meta_files <- list.files(here("external_data","GSE137539/metadata"),
+                         pattern = "Mouse",
+                         full.names= TRUE)
+mm_meta <- map(meta_files, function(x){
+
+  df <- read.delim(file = x,
+                   sep = "\t") %>% 
+    rownames_to_column("cell_id")
+  })%>%
+  bind_rows()
+
+##read umi count
+#umi files
+count_files <- list.files(here("external_data","GSE137539/counts_raw"),
+                          pattern = "^GSM[0-9]+_wt",
+                          full.names= TRUE)
+names(count_files) <- names(count_files) <- str_extract(count_files, "wt[_a-zA-Z0-9]+")%>%str_replace_all("_","\\.")
+#read files
+count_mm_lst <- map(names(count_files), function(x){
+
+  df <- read.delim(file = count_files[x],
+                   sep = " ") %>% 
+    rename_with(~paste(x, ., sep = "_"))#add sample name to cell id
+  temp_srt_obj <- Seurat::CreateSeuratObject(df,
+                                             project = x)
+  }) %>% setNames(.,names(count_files))
+
+## merge mouse datasets
+xie_mm <- merge(count_mm_lst[[1]], y = c(count_mm_lst[-1]))
+#add cell id column
+xie_mm$cell_id <- rownames(xie_mm@meta.data)
+
+## join metadata 
+xie_mm@meta.data <- xie_mm@meta.data %>% 
+  left_join(mm_meta)
+rownames(xie_mm@meta.data) <- xie_mm@meta.data$cell_id
+
+```
+
+
+### neutrotime
+```{r neutrotime, cache=TRUE}
+## ---- neutrotime_healthy
+scPortal_metadata<- read_csv(here("external_data","GSE165276/immgen/scPortal_metadata.csv"))
+count_files <- list.files(here("external_data","GSE165276/counts_raw/"), full.names = TRUE) %>% 
+  str_subset(pattern = "BL|BM|SP")
+
+neutime_lst <- lapply(count_files, function(x){
+  labels <- x %>% 
+    basename() %>% 
+    str_replace("\\..+","") %>%
+    str_split("_", simplify= TRUE)%>%
+    as.data.frame()%>%
+    mutate(tissue_dataset = paste0(tolower(V2),str_sub(V3,-1,-1)))
+  
+  count <- read.table(x) %>%
+    rename_with(~ glue::glue("{labels$tissue_dataset}_{.}"))
+  
+  meta_data <- data.frame(experiment_extract = labels[1,1],
+                          tissue_extract = labels[1,2],
+                          dataset_extract = labels[1,3],
+                          cell_id = colnames(count))
+  
+  #select only cells in scPortal_metadata (cell names have to be modified by removing trailing numbers before comparison to scPortal cell names)
+  count_cells <- colnames(count)
+  scPortal_cells <- count_cells[count_cells%>%str_replace("\\..$", "") %in% scPortal_metadata$NAME]
+  count <- count[,scPortal_cells] %>%
+    rownames_to_column("gene_sym")
+  
+  list(count = count,
+       meta_data = meta_data)
+  })
+
+neutime_counts <- lapply(neutime_lst, function(x){
+  x$count
+  })%>% 
+  purrr::reduce(full_join, by = "gene_sym") %>% 
+  mutate(across(where(is.numeric), coalesce, 0)) %>% 
+  column_to_rownames("gene_sym")
+
+neutime_meta_data <- lapply(neutime_lst, function(x){
+  x$meta_data
+  }) %>%
+  bind_rows() %>% 
+  mutate(cell_id_modified = str_replace(cell_id, "\\..$", "")) %>%
+  inner_join(scPortal_metadata, by = c("cell_id_modified"="NAME")) %>%
+  column_to_rownames("cell_id")
+
+neutime_obj <- Seurat::CreateSeuratObject(neutime_counts,
+                                          meta.data = neutime_meta_data[colnames(neutime_counts),])  
+```
+neutrotime inflamation datasets
+```{r neutrotime_inf, cache=TRUE}
+neutime_inf_metadata <- read_tsv(here("external_data/GSE165276/counts_raw/GSM5029341_inflammation_dataset3_readme.txt.gz")) %>% column_to_rownames("barcode")
+neutime_inf_count <- read.table(here("external_data/GSE165276/counts_raw/GSM5029341_inflammation_dataset3.txt.gz"))
+neutime_obj_inf <- Seurat::CreateSeuratObject(neutime_inf_count, meta.data = neutime_inf_metadata[colnames(neutime_inf_count),])
+
+neutime_obj_all <- merge(neutime_obj, neutime_obj_inf)
+neutime_obj_all$stimulus <- ifelse(is.na(neutime_obj_all$stimulus), "ctrl", neutime_obj_all$stimulus)
+```
+### abc
+```{r abc, cache=TRUE}
+## ---- abc_reference
+#blood cells
+cells_counts <- read.csv(here("external_data","GSE149938/count/GSE149938_umi_matrix.csv.gz"))
+abc_cells_obj <- Seurat::CreateSeuratObject(t(cells_counts))
+cells_meta_data <- str_split(rownames(abc_cells_obj@meta.data),pattern = "_",simplify = TRUE) %>% 
+  as.data.frame()
+colnames(cells_meta_data) <- c("cell_type", "tissue", "group", "barcode")
+rownames(cells_meta_data) <- rownames(cells_counts)
+cells_meta_data$dataset <- "GSE149938"
+abc_cells_obj@meta.data <- bind_cols(abc_cells_obj@meta.data,cells_meta_data)
+#hsc
+abc_hsc_10x <- Seurat::Read10X(here("external_data","GSE137864/count"))
+abc_hsc_obj <- Seurat::CreateSeuratObject(abc_hsc_10x)
+hsc_meta_data <- rownames(abc_hsc_obj@meta.data) %>%
+  str_split(pattern = "_",simplify = TRUE) %>% 
+  as.data.frame() %>% 
+  mutate(cell_id = rownames(abc_hsc_obj@meta.data),
+         dataset = "GSE137864") %>% 
+  column_to_rownames("cell_id")
+colnames(hsc_meta_data) <- c("cell_type", "tissue", "group", "barcode", "dataset")
+abc_hsc_obj@meta.data <- bind_cols(abc_hsc_obj@meta.data, hsc_meta_data)
+#merge
+abs_obj <- merge(abc_cells_obj, abc_hsc_obj)
+
+
+```
+### Ballesteros
+```{r Ballesteros}
+## ---- Ballesteros
+ballesteros_2020_meta<- read_csv(here("external_data","GSE142754/metadata/ballesteros_2020_meta.csv"))%>%
+  dplyr::rename("cell_id" = "...1",
+                "nCount_RNA_metadata"="nCount_RNA",
+                "nFeature_RNA_metadata"="nFeature_RNA")%>%
+  mutate(cell_id_only = str_replace(cell_id,".+_", ""))%>%
+  filter(!cell_id_only %in% cell_id_only[duplicated(cell_id_only)])#remove cells with the same cell_id_only sequence
+  
+ballesteros_files <- list.files(here("external_data","GSE142754/count"),full.names = TRUE)
+ballesteros_files_lst <- lapply(split(ballesteros_files, str_extract(ballesteros_files, "GSM[0-9]+")), sort)
+
+#exclude GSM4239565 "Error: Matrix has 3388 columns but found 3204 barcodes."
+ballesteros_files_lst <- ballesteros_files_lst[-which(names(ballesteros_files_lst) == "GSM4239565")]
+ballesteros_meta_data <- lapply(ballesteros_files_lst, function(x){
+  df <- x[2] %>%
+    str_replace(".+neut_zfish/","") %>%
+    str_split("_", simplify = TRUE)
+  df[3]
+  }) %>% 
+  stack() %>% 
+  dplyr::rename("tissue_extracted" = "values", "experiment_extracted" = "ind")
+
+ballesteros_10X <- lapply(ballesteros_files_lst, function(x){
+  x <- str_replace(x,".+neut_zfish/","")
+  Seurat::ReadMtx(cells=x[1],features=x[2],mtx=x[3])
+  })
+ballesteros_obj_lst <-  lapply(names(ballesteros_10X), function(x){
+  Seurat::CreateSeuratObject(ballesteros_10X[[x]],
+                             project = x)
+  })
+
+ballesteros_obj <- merge(ballesteros_obj_lst[[1]],ballesteros_obj_lst[-1])
+ballesteros_obj@meta.data <- ballesteros_obj@meta.data %>%
+  rownames_to_column("cell_id") %>% 
+  full_join(ballesteros_meta_data, by = c("orig.ident"= "experiment_extracted")) %>%
+  column_to_rownames("cell_id")
+
+#select cells from ballesteros_2020_meta
+ballesteros_obj$cell_id_10x <- ballesteros_obj@meta.data%>%rownames()
+ballesteros_obj@meta.data <- ballesteros_obj@meta.data %>%
+  mutate(cell_id_only = str_replace(cell_id_10x, "-.+$",""),
+         cell_id_modified = paste(tissue_extracted,cell_id_only, sep="_"))
+
+#tissue name is not consistent between the ballesteros_2020_meta and files from GEO.
+#match only the sequence part of cell ids
+ballesteros_obj <- subset(ballesteros_obj, cell_id_only %in% ballesteros_2020_meta$cell_id_only)
+#add ballesteros_2020_meta
+ballesteros_obj@meta.data <- ballesteros_obj@meta.data %>%
+  inner_join(ballesteros_2020_meta, by = "cell_id_only") 
+rownames(ballesteros_obj@meta.data) <- ballesteros_obj$cell_id_10x 
+```
+
+### Suo et al (Mutli-organ development atlas)
+```{r Suo, cache = TRUE}
+#ad <- anndata::read_h5ad(list.files(here("external_data/Suo/"),
+#                                pattern = "seurat",
+#                                full.names = TRUE))
+
+suo <- SeuratDisk::LoadH5Seurat(list.files(here("external_data/Suo/"),
+                                pattern = "seurat",
+                                full.names = TRUE),
+                                assays = "RNA",
+                                reductions = "umap",
+                                meta.data = FALSE)  
+
+suo_h5 <- hdf5r::h5file(list.files(here("external_data/Suo/"),
+                                pattern = "seurat",
+                                full.names = TRUE), mode = 'r+')
+suo_cellnames <- suo_h5[["cell.names"]][]
+suo_metadata_h5 <- suo_h5[["meta.data"]]
+
+suo_metadata <- sapply(suo_metadata_h5$ls()$name, function(group){
+  suo_metadata_h5[[group]][["levels"]][][suo_metadata_h5[[group]][["values"]][]]
+  })%>%
+  do.call(cbind,.) %>%
+  as.data.frame()
+rownames(suo_metadata) <- suo_cellnames
+suo <- suo[,suo_cellnames]
+suo@meta.data <- suo_metadata
+DimPlot(suo,group = "celltype_annotation",label=TRUE)+theme(legend.position="none")
+
+suo_neut <- subset(suo,celltype_annotation %in% c("NEUTROPHIL","MYELOCYTE","PROMYELOCYTE") )
+DimPlot(suo_neut,group = "celltype_annotation",label=TRUE)
+DimPlot(suo_neut,group = "donor")+theme(legend.position="none")
+
+hdf5r::h5close(suo_h5)
+rm(suo_h5)
+rm(suo)
+```
+### Tabula sapien
+```{r tabula_sapien,cache = TRUE}
+tabula_sapiens <- read_rds(list.files(here("external_data/tabula_sapiens/"),
+                                pattern = "rds",
+                                full.names = TRUE))
+DimPlot(tabula_sapiens, group = "cell_type", label=TRUE, repel = TRUE, reduction = "umap")+theme(legend.position="none")
+
+tabula_sapiens_neut <- subset(tabula_sapiens,cell_type == "neutrophil")  
+rm(tabula_sapiens)
+#exclude tissues with less than 100 cells
+tissues <- table(tabula_sapiens_neut$tissue%>%as.character) %>% sort
+tabula_sapiens_neut <- subset(tabula_sapiens_neut,tissue %in% names(tissues)[tissues>=100])            
+```
+
+## bulk RNA-seq
+
+### Ramirez 2017
+```{r Ramirez, cache=TRUE}
+files <-list.files(here("external_data","GSE79044"),full.names = TRUE,pattern = "Neu-")
+ramirez_count <- lapply(files,read_tsv)%>%
+  purrr::reduce(inner_join, "gene_id")%>%
+  mutate(gene_id = gene_id %>% str_replace(".[0-9]+$",""))
+#biomart to match gene symbol and id
+httr::set_config(httr::config(ssl_verifypeer = FALSE))
+human_gene_attr <- getBM(attributes = c("hgnc_symbol","ensembl_gene_id"),
+           filters    = "ensembl_gene_id",
+           values     = ramirez_count$gene_id,
+           mart       = useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl")) %>% 
+  filter(nchar(hgnc_symbol)!= 0)
+ramirez_count <- ramirez_count %>%
+  inner_join(human_gene_attr, by = c("gene_id"="ensembl_gene_id"))%>%
+  dplyr::select( hgnc_symbol, everything(),-gene_id)
+```
+
+### GSE109467
+```{r Evrard, cache=TRUE}
+evrard_samples <- read.csv(list.files(here("external_data/GSE109467/"),
+                                pattern = "meta",
+                                full.names = TRUE),
+                                header = FALSE) %>%
+                        mutate(V2 = V2 %>% tolower %>% str_replace_all(" ", "_") %>% str_replace_all("_replicate_","_")) %$%
+                        setNames( V2,V1)
+
+evrard_count <- read.table(list.files(here("external_data/GSE109467/"),
+                                pattern = ".txt",
+                                full.names = TRUE),
+                                header = TRUE) %>%
+          dplyr::select(gene_name, BN13_6_RMB3580:LN_1_RMB3572)
+#remove GMPs
+evrard_count[,str_detect(colnames(evrard_count), "GMP")] <- NULL
+#normalization
+evrard_norm <- evrard_count[,-1]%>% 
+  apply(2,function(x){
+    (x/sum(x))*1e6}) %>% 
+  as.data.frame %>% 
+  mutate_all(~log2(.x+1)) 
+#rename columns
+colnames(evrard_norm) <- evrard_samples[colnames(evrard_norm) ]
+
+evrard_norm$gene_name <- evrard_count$gene_name
+```
+### Zhu et al
+#### GSE117129
+```{r Zhu, cache=TRUE}
+#exclude progenitors
+zhu_log2_cpm <- read.table(list.files(here("external_data/GSE117129/"),
+                                pattern = "txt",
+                                full.names = TRUE),
+                                header = TRUE,
+                                sep = ",") %>%
+                dplyr::select(-c(X, ENTREZID, starts_with("C")))
+```
+
+## Neuroblastoma
+```{r Neuroblastoma, cache = TRUE}
+#read data
+load("external_data/mohamed_neuroblastoma/infiltration_group2_timepointDE_mohamed.RData")
+design(dds)  # design used in dds and rld/vsd
+nboma_metadata <- as.data.frame(colData(dds_filt))  # project metadata
+nboma_raw <- counts(dds_filt, normalized = FALSE)  # raw counts
+nboma_norm <- counts(dds_filt, normalized = TRUE)  # normalized counts
+nboma_vsd <- vsd_filt
+```
+
+## Supplementary data {.tabset}
+```{r homologous_gene, cache=FALSE}
+## ---- homologous_gene
+#define datasets
+#datasets <- listDatasets(ensembl)
+httr::set_config(httr::config(ssl_verifypeer = FALSE))
+zfish <- useEnsembl("ensembl", dataset = "drerio_gene_ensembl",mirror = "useast")
+human <- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl",mirror = "useast")
+mouse <- useEnsembl("ensembl", dataset = "mmusculus_gene_ensembl",mirror = "useast")
+
+#retrieve homologous genes
+#human
+human_homo <- getLDS(attributes = c("zfin_id_symbol"),
+                     filters = c("zfin_id_symbol"),
+                     values = rownames(srt_obj),
+                     mart = zfish,
+                     attributesL = c("hgnc_symbol", "external_gene_name"),
+                     martL = human)
+human_homo <- human_homo %>%
+  #merge symbols hgnc_symbol and external_gene_name to the same column
+  pivot_longer(-ZFIN.symbol,names_to = "cols",values_to = "human_symbol") %>% 
+  #fiter out undetected symbols 
+  filter(nchar(human_symbol)!=0) %>%
+  #remove redundant symbols between hgnc_symbol and external_gene_name
+  distinct(ZFIN.symbol, human_symbol)
+#mouse
+mouse_homo <- getLDS(attributes = c("zfin_id_symbol"),
+                     filters = c("zfin_id_symbol"),
+                     values = rownames(srt_obj),
+                     mart = zfish,
+                     attributesL = c("mgi_symbol", "external_gene_name"),
+                     martL = mouse)
+mouse_homo <- mouse_homo %>%
+  #merge symbols mgi_symbol and external_gene_name to the same column
+  pivot_longer(-ZFIN.symbol,names_to = "cols",values_to = "mouse_symbol") %>% 
+  #fiter out undetected symbols 
+  filter(nchar(mouse_symbol)!=0) %>%
+  #remove redundant symbols between mgi_symbol and external_gene_name
+  distinct(ZFIN.symbol, mouse_symbol)
+
+#merge homologous genes in human and mouse
+homo_df <- human_homo %>% 
+  full_join(mouse_homo,by = "ZFIN.symbol")
+
+```
+### neutrophil_signatures
+```{r neutrophil_signatures}
+## ---- neutrophil_signatures
+#readxl::excel_sheets("xie_nat_imm_2020.xlsx")
+neut_signatures <- readxl::read_excel(here("external_data","GSE137539/metadata/xie_nat_imm_2020.xlsx"),
+                                sheet = "Table 4",
+                                skip = 2) %>%
+  pivot_longer(cols = everything(),
+               names_to = "signature",
+               values_to = "mouse_symbol") %>%
+  left_join(homo_df) %>% 
+  mutate(ref = str_extract(signature, "\\(.+\\)"),
+         signature = str_replace(signature, "\\(.+\\)", ""),
+         signature = str_trim(signature),
+         signature = str_replace_all(signature," ", "_"),
+         signature = str_to_lower(signature),
+         gene = ZFIN.symbol) %>% 
+  dplyr::select(-c(mouse_symbol:ref)) %>% 
+  distinct_all() %>% 
+  na.omit()
+
+
+```
+

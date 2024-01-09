@@ -1,0 +1,81 @@
+---
+title: "child_impute_negatives"
+author: "Mohamed_Shoeb"
+date: "10/15/2021"
+output: html_document
+---
+
+Split seurat object into negative and labelled cells
+```{r zebrafish_split, cache=TRUE}
+#split cells into the negative and labeled groups
+srt_obj$citr_split <- ifelse(srt_obj$citrin_state %in% c("NO", "HI", "INT"), "citrin_A1", srt_obj$citrin_state)
+srt_citr_lst <- Seurat::SplitObject(srt_obj, split.by = "citr_split")
+cells <- split(srt_obj@meta.data %>% rownames, srt_obj$citr_split)
+srt_citr_lst <- lapply(srt_citr_lst, function(sub_set){
+  sub_set <- NormalizeData(sub_set,
+                           assay = "RNA",
+                           verbose = FALSE)
+  sub_set <- FindVariableFeatures(sub_set,
+                                  assay="RNA",
+                                  nfeatures=3000,
+                                  verbose = FALSE)
+  sub_set <- ScaleData(sub_set,
+                       features = rownames(sub_set))
+
+  })
+```
+
+Impute negatives in A1 library
+```{r A1_imputation, cache=TRUE}
+#run A1
+r <- "citrin_A1"
+q <- "Negative_A1"
+
+#common variable features
+feats <- base::intersect(srt_citr_lst[[r]]@assays$RNA@var.features, srt_citr_lst[[q]]@assays$RNA@var.features)
+train <- t(srt_citr_lst[[r]]@assays$RNA@data[feats,])
+test <- t(srt_citr_lst[[q]]@assays$RNA@data[feats,])
+cl <- factor(srt_citr_lst[[r]]$sort_id)
+
+#lda classification
+lda_model <- MASS::lda(train, cl)
+#pred_ref_table <- table(cl, predict(lda_model,train)$class) %>% as.matrix()
+cutoff <- 0.95
+impute_class <- predict(lda_model,test)$class
+post_prop <- apply(predict(lda_model,test)$posterior,1,max)
+srt_citr_lst[[q]]$sort_id <- predict(lda_model,test)$class
+srt_citr_lst[[q]]$sort_id_lda_post <- post_prop
+srt_citr_lst[[q]]$fish <- str_split(srt_citr_lst[[q]]$sort_id,"_",simplify = TRUE)[,1]
+srt_citr_lst[[q]]$citrin_state <- str_split(srt_citr_lst[[q]]$sort_id,"_",simplify = TRUE)[,2]
+srt_citr_lst[[q]] <- srt_citr_lst[[q]][,srt_citr_lst[[q]]$sort_id_lda_post >= cutoff]
+```
+Impute negatives in A2 library
+```{r A2_imputation, cache=TRUE}
+#run A2
+r <- "WKM"
+q <- "Negative_A2"
+
+#common variable features
+feats <- base::intersect(srt_citr_lst[[r]]@assays$RNA@var.features, srt_citr_lst[[q]]@assays$RNA@var.features)
+train <- t(srt_citr_lst[[r]]@assays$RNA@data[feats,])
+test <- t(srt_citr_lst[[q]]@assays$RNA@data[feats,])
+cl <- factor(srt_citr_lst[[r]]$sort_id)
+
+#lda classification
+lda_model <- MASS::lda(train, cl)
+#pred_ref_table <- table(cl, predict(lda_model,train)$class) %>% as.matrix()
+cutoff <- 0.95
+impute_class <- predict(lda_model,test)$class
+post_prop <- apply(predict(lda_model,test)$posterior,1,max)
+srt_citr_lst[[q]]$sort_id <- predict(lda_model,test)$class
+srt_citr_lst[[q]]$sort_id_lda_post <- post_prop
+srt_citr_lst[[q]]$fish <- str_split(srt_citr_lst[[q]]$sort_id,"_",simplify = TRUE)[,1]
+srt_citr_lst[[q]]$citrin_state <- str_split(srt_citr_lst[[q]]$sort_id,"_",simplify = TRUE)[,2]
+srt_citr_lst[[q]] <- srt_citr_lst[[q]][,srt_citr_lst[[q]]$sort_id_lda_post >= cutoff]
+```
+
+merge imputed subsets
+```{r zebrafish_merge_imputed, cache=TRUE}
+# 
+srt_obj <- merge(srt_citr_lst[[1]], srt_citr_lst[-1])
+```

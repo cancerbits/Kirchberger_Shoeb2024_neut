@@ -1,0 +1,33 @@
+---
+title: "child_paramters"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(eval = TRUE)
+
+```
+
+```{r }
+## ---- parameter_list
+
+param_lst <- list(
+  workers = 16,
+  #differential analysis thresholds
+  diff_test ="MAST",
+  min_cell_n = 50 ,
+  fdr_threshold = 0.005,
+  
+  PCA_DIMS = 1:30,
+  MIN_FEATURES = 500,
+  MIN_CELLS = 20,
+  PERC_MITO = 10,
+  MAX_DOUBLET_SCORE = 3
+)
+
+BPPARAM <- MulticoreParam(workers=param_lst$workers)
+theme_set(theme_cowplot()) #ggplot2 theme
+```
+

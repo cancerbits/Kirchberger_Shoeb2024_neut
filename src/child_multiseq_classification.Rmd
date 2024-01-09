@@ -1,0 +1,105 @@
+---
+title: "child_multiseq_classification"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(eval = TRUE)
+
+```
+
+```{r add_barcode_and_pool}
+## ---- add_barcode_and_pool
+ids <- str_split(rownames(srt_obj@meta.data), pattern = "_|-", simplify = TRUE)
+srt_obj@meta.data$barcode <- ids[,3]
+srt_obj@meta.data$pool <- ids[,2]
+
+## ---- split_seurat_by_pool
+srt_lst <- Seurat::SplitObject(srt_obj, split.by = "pool")
+```
+
+barcode_preprocessing_and_alignment
+```{r multiseq_barcode_preprocessing, cache = TRUE}
+barcode_preprocess <- lapply(names(barcode_rep),function(rep_x){
+  
+  srt_x <- srt_lst[[rep_x]]
+  barcode_x <- barcode_path[[rep_x]]
+  
+  A_x_R1 <- str_subset(barcode_x, "R1")
+  A_x_R2 <- str_subset(barcode_x, "R2")
+  
+  readTable <- MULTIseq.preProcess(R1 = A_x_R1,
+                                   R2 = A_x_R2,
+                                   cellIDs = srt_x@meta.data$barcode ,
+                                   cell=c(1,16), umi=c(17,28), tag=c(1,8))
+})%>% setNames(names(barcode_rep))
+
+barcode_align <- lapply(names(barcode_rep),function(rep_x){
+  
+  srt_x <- srt_lst[[rep_x]]
+  table_x <- barcode_preprocess[[rep_x]]
+  cell_ids_x <- barcode_rep[[rep_x]]
+  
+  MULTIseq.align(table_x,
+                 srt_x@meta.data$barcode,
+                 cell_ids_x)
+}) %>% setNames(names(barcode_rep))
+
+## ---- barcode_tsne_space
+barcode_tsne <- lapply(names(barcode_rep), function(rep_x){
+  table_x <- barcode_align[[rep_x]]
+  
+  barTSNE(table_x %>% select_at(vars(starts_with("Bar"))))
+}) %>% setNames(names(barcode_rep))
+
+
+```
+
+cell_classification
+```{r multiseq_classification, cache = TRUE}
+## ---- 
+cell_class <- list()
+
+for(rep_x in names(barcode_rep)){
+  i <- 1
+  bar_table <- barcode_align[[rep_x]] %>% select_at(vars(starts_with("Bar")))
+  while (TRUE){
+    bar.table_sweep.list <- list()
+    n <- 0
+    for (q in seq(0.01, 0.99, by=0.02)) {
+      #print(q)
+      n <- n + 1
+      bar.table_sweep.list[[n]] <- deMULTIplex::classifyCells(bar_table, q=q)
+      names(bar.table_sweep.list)[n] <- paste("q=",q,sep="")
+    }
+    
+    threshold.results <- findThresh(call.list=bar.table_sweep.list)
+    
+    # Finalize round 1 classifications, remove negative cells
+    round.calls <- deMULTIplex::classifyCells(bar_table , q=findQ(threshold.results$res, threshold.results$extrema))
+    neg.cells <- names(round.calls)[which(round.calls == "Negative")]
+    plt <- ggplot(data=threshold.results$res, aes(x=q, y=Proportion, color=Subset)) +
+      geom_line() +
+      theme(legend.position = "none") +
+      geom_vline(xintercept=threshold.results$extrema, lty=2) +
+      scale_color_manual(values=c("red","black","blue"))+
+      labs(title = glue("{rep_x} {i};Negative cells: {length(neg.cells)}"))
+    print(plt)
+    
+    message(glue("Negative cells: {length(neg.cells)}"))
+    if(length(neg.cells)<100){
+      ## Repeat until all no negative cells remain (usually 3 rounds)...
+      final.calls <- c(round.calls, rep("Negative",length(neg.cells)))
+      names(final.calls) <- c(names(round.calls),neg.cells)
+      cell_class[[rep_x]] <- final.calls %>%enframe(name = "barcode", value = "cell_class")
+      break
+    }
+    bar_table <- bar_table[-which(rownames(bar_table) %in% neg.cells), ]
+    
+    i <- i+1
+  }
+}
+
+```

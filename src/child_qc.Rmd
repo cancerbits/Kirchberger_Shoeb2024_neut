@@ -1,0 +1,49 @@
+---
+title: "child_qc"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+
+## Inhouse data {.tabset}
+### zebrafish
+```{r zebrafish_qc, cache=TRUE}
+srt_obj <- qc_process(srt_obj, "zebrafish")
+```
+
+## External data {.tabset}
+### tang et al
+```{r ref1_qc, cache=TRUE}
+srt_obj_ref1 <- qc_process(srt_obj_ref1, "zebrafish")
+
+```
+### ref2
+```{r ref2_qc, cache=TRUE}
+srt_obj_ref2 <- qc_process(srt_obj_ref2, "zebrafish")
+
+```
+### xie et al
+```{r xie_qc, cache=TRUE}
+xie_mm <- qc_process(xie_mm, "mouse")
+
+```
+### neutrotime
+```{r neutrotime_qc, cache=TRUE}
+neutime_obj <- qc_process(neutime_obj, "mouse")
+
+```
+
+```{r neutrotime_all_qc, cache=TRUE}
+neutime_obj_all <- qc_process(neutime_obj_all, "mouse")
+
+```
+### abs
+```{r abs_qc, cache=TRUE}
+abs_obj <- qc_process(abs_obj, "human")
+
+```
+### Ballesteros
+```{r Ballesteros_qc, cache=TRUE}
+ballesteros_obj <- qc_process(ballesteros_obj, "mouse")
+
+```

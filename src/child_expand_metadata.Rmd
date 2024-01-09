@@ -1,0 +1,53 @@
+---
+title: "child_expand_metadata"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(eval = TRUE)
+
+```
+ 
+```{r match_multiseq_classes}
+## ---- match_multiseq_barcode_label_and_samples
+clindata <- lapply(names(barcode_rep),function(rep_x){
+  x <- barcode_align[[rep_x]]
+  colnames(x)%>%
+    str_subset("Bar")%>%
+    str_c(.,rep_x,sep="_")%>%
+    setNames(barcode_rep[[rep_x]])
+}) %>%
+  unlist %>%
+  enframe(name = "barcode_seq", value = "cell_class")%>%
+  left_join(clindata, by = "barcode_seq")
+
+## ---- add_cell_class
+cell_class_all <- cell_class%>%
+  bind_rows(.id="pool")%>%
+  mutate(cell_id = paste(pool, barcode, sep = "_"),
+         cell_class = paste(cell_class, pool,sep = "_"),
+         pool = NULL,
+         barcode = NULL) %>%
+  distinct_all()
+```
+
+```{r add_multiseq_classes, cache=TRUE}
+srt_obj@meta.data$cell_id <- str_extract(rownames(srt_obj@meta.data), "A._.[A-Z]+")
+
+srt_obj@meta.data <- srt_obj@meta.data %>%
+  rownames_to_column("cell_ids")%>%
+  left_join(cell_class_all, by = "cell_id") %>%
+  mutate(cell_class = ifelse(is.na(cell_class), glue("Negative_{pool}"), cell_class)) %>%
+  left_join(clindata, by = "cell_class" ) %>% 
+  mutate(sort_id = ifelse(is.na(sort_id), cell_class,as.character(sort_id)),
+         sort_well = str_replace(cell_class, ".+_","")) %>%
+  mutate_at(c("citrin_state", "fish"), ~ifelse(is.na(.), cell_class, as.character(.))) %>% 
+  column_to_rownames("cell_ids") 
+
+#remove multiseq doublets
+srt_obj <- srt_obj[,str_detect(srt_obj$cell_class, "Doublet",negate = TRUE)]
+
+```
+

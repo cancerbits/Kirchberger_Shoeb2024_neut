@@ -1,0 +1,364 @@
+---
+title: "child_homologs_mapping"
+author: "Mohamed_Shoeb"
+date: "10/20/2021"
+output: html_document
+---
+
+## mouse
+```{r xie_mm_neut_rename}
+attribute <- "detection_rate"
+homo_df_xie <- homo_df[,c("ZFIN.symbol","mouse_symbol")] %>% distinct_all()
+homo_df_xie$zfish_feat_attr <- Seurat::SCTResults(srt_traj, slot = "feature.attributes")[homo_df_xie$ZFIN.symbol,attribute]
+homo_df_xie$mouse_feat_attr <- Seurat::SCTResults(xie_mm_neut, slot = "feature.attributes")[homo_df_xie$mouse_symbol,attribute]
+
+#1 to 1 homology matching
+set.seed(1992)
+homo_df_xie_1_to_1 <- homo_df_xie %>%
+  filter(ZFIN.symbol %in% srt_traj@assays$SCT@counts@Dimnames[[1]]) %>% 
+  filter(mouse_symbol %in% xie_mm_neut@assays$SCT@counts@Dimnames[[1]]) %>%
+  arrange(ZFIN.symbol) %>%
+  na.omit() %>% 
+  group_by(ZFIN.symbol) %>%
+  slice_max(n=1, order_by=mouse_feat_attr, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  group_by(mouse_symbol) %>%
+  slice_max(n=1, order_by=zfish_feat_attr, with_ties = FALSE) %>% 
+  ungroup() 
+
+#any not 1-to-1 homolgous?
+apply(homo_df_xie_1_to_1[,c("ZFIN.symbol","mouse_symbol")],2,function(x){
+  duplicated(x) %>% sum
+})
+
+##change homologous mouse genes symbols' to zebra fish symbols
+xie_mm_neut_homo <- RenameGenesSeurat(obj = xie_mm_neut,
+                                      assay_name = "SCT",
+                                 oldnames_ordered = homo_df_xie_1_to_1$mouse_symbol,
+                                 newnames = homo_df_xie_1_to_1$ZFIN.symbol)
+
+xie_mm_neut_homo <- RenameGenesSeurat(obj = xie_mm_neut_homo,
+                                      assay_name = "RNA",
+                                 oldnames_ordered = homo_df_xie_1_to_1$mouse_symbol,
+                                 newnames = homo_df_xie_1_to_1$ZFIN.symbol)
+```
+
+```{r neutrotime_dim_red_rename}
+attribute <- "detection_rate"
+homo_df_neutime <- homo_df[,c("ZFIN.symbol","mouse_symbol")] %>% distinct_all()
+homo_df_neutime$zfish_feat_attr <- Seurat::SCTResults(srt_traj, slot = "feature.attributes")[homo_df_neutime$ZFIN.symbol,attribute]
+homo_df_neutime$mouse_feat_attr <- Seurat::SCTResults(neutime_obj, slot = "feature.attributes")[homo_df_neutime$mouse_symbol,attribute]
+
+#1 to 1 homology matching
+set.seed(1992)
+homo_df_neutime_1_to_1 <- homo_df_neutime %>%
+  filter(ZFIN.symbol %in% srt_traj@assays$SCT@counts@Dimnames[[1]]) %>% 
+  filter(mouse_symbol %in% neutime_obj@assays$SCT@counts@Dimnames[[1]]) %>%
+  arrange(ZFIN.symbol) %>%
+  na.omit() %>% 
+  group_by(ZFIN.symbol) %>%
+  slice_max(n=1, order_by=mouse_feat_attr, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  group_by(mouse_symbol) %>%
+  slice_max(n=1, order_by=zfish_feat_attr, with_ties = FALSE) %>% 
+  ungroup() 
+
+#any not 1-to-1 homolgous?
+apply(homo_df_neutime_1_to_1[,c("ZFIN.symbol","mouse_symbol")],2,function(x){
+  duplicated(x) %>% sum
+})
+
+##change homologous mouse genes symbols' to zebra fish symbols
+neutime_obj_homo <- RenameGenesSeurat(obj = neutime_obj,
+                                      assay_name = "SCT",
+                                      oldnames_ordered = homo_df_neutime_1_to_1$mouse_symbol,
+                                      newnames = homo_df_neutime_1_to_1$ZFIN.symbol)
+
+neutime_obj_homo <- RenameGenesSeurat(obj = neutime_obj_homo,
+                                      assay_name = "RNA",
+                                      oldnames_ordered = homo_df_neutime_1_to_1$mouse_symbol,
+                                      newnames = homo_df_neutime_1_to_1$ZFIN.symbol)
+
+```
+
+```{r ballesteros_dim_red_rename}
+attribute <- "detection_rate"
+homo_df_ballesteros <- homo_df[,c("ZFIN.symbol","mouse_symbol")] %>% distinct_all()
+homo_df_ballesteros$zfish_feat_attr <- Seurat::SCTResults(srt_traj, slot = "feature.attributes")[homo_df_ballesteros$ZFIN.symbol,attribute]
+homo_df_ballesteros$mouse_feat_attr <- Seurat::SCTResults(ballesteros_obj_neut, slot = "feature.attributes")[homo_df_ballesteros$mouse_symbol,attribute]
+
+#1 to 1 homology matching
+set.seed(1992)
+homo_df_ballesteros_1_to_1 <- homo_df_ballesteros %>%
+  filter(ZFIN.symbol %in% srt_traj@assays$SCT@counts@Dimnames[[1]]) %>% 
+  filter(mouse_symbol %in% ballesteros_obj_neut@assays$SCT@counts@Dimnames[[1]]) %>%
+  arrange(ZFIN.symbol) %>%
+  na.omit() %>% 
+  group_by(ZFIN.symbol) %>%
+  slice_max(n=1, order_by=mouse_feat_attr, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  group_by(mouse_symbol) %>%
+  slice_max(n=1, order_by=zfish_feat_attr, with_ties = FALSE) %>% 
+  ungroup() 
+
+#any not 1-to-1 homolgous?
+apply(homo_df_ballesteros_1_to_1[,c("ZFIN.symbol","mouse_symbol")],2,function(x){
+  duplicated(x) %>% sum
+})
+
+##change homologous mouse genes symbols' to zebra fish symbols
+ballesteros_obj_neut_homo <- RenameGenesSeurat(obj = ballesteros_obj_neut,
+                                      assay_name = "SCT",
+                                      oldnames_ordered = homo_df_ballesteros_1_to_1$mouse_symbol,
+                                      newnames = homo_df_ballesteros_1_to_1$ZFIN.symbol)
+
+ballesteros_obj_neut_homo <- RenameGenesSeurat(obj = ballesteros_obj_neut_homo,
+                                      assay_name = "RNA",
+                                      oldnames_ordered = homo_df_ballesteros_1_to_1$mouse_symbol,
+                                      newnames = homo_df_ballesteros_1_to_1$ZFIN.symbol)
+
+```
+
+## human
+```{r abs_rename}
+attribute <- "detection_rate"
+homo_df_abs <- homo_df[,c("ZFIN.symbol","human_symbol")] %>% distinct_all() %>% mutate(human_symbol = str_replace(human_symbol,"-","."))
+homo_df_abs$zfish_feat_attr <- Seurat::SCTResults(srt_traj, slot = "feature.attributes")[homo_df_abs$ZFIN.symbol,attribute]
+homo_df_abs$human_feat_attr <- Seurat::SCTResults(abs_obj_neut, slot = "feature.attributes")[homo_df_abs$human_symbol,attribute]
+
+
+#1 to 1 homology matching
+set.seed(1992)
+homo_df_abs_1_to_1 <- homo_df_abs %>%
+  filter(ZFIN.symbol %in% srt_traj@assays$SCT@counts@Dimnames[[1]]) %>% 
+  filter(human_symbol %in% abs_obj_neut@assays$SCT@counts@Dimnames[[1]]) %>%
+  arrange(ZFIN.symbol) %>%
+  na.omit() %>% 
+  group_by(ZFIN.symbol) %>%
+  slice_max(n=1, order_by=human_feat_attr, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  group_by(human_symbol) %>%
+  slice_max(n=1, order_by=zfish_feat_attr, with_ties = FALSE) %>% 
+  ungroup() 
+
+#
+# homo_df_abs_1_to_1 <- homo_df_abs_1_to_1 %>%
+#   filter(ZFIN.symbol%in%VariableFeatures(srt_traj,assay="SCT") & human_symbol %in% VariableFeatures(abs_obj_neut,assay="SCT"))
+#any not 1-to-1 homolgous?
+apply(homo_df_abs_1_to_1[,c("ZFIN.symbol","human_symbol")],2,function(x){
+  duplicated(x) %>% sum
+})
+
+##change homologous human genes symbols' to zebra fish symbols
+abs_neut_homo <- RenameGenesSeurat(obj = abs_obj_neut,
+                                      assay_name = "SCT",
+                                      oldnames_ordered = homo_df_abs_1_to_1$human_symbol,
+                                      newnames = homo_df_abs_1_to_1$ZFIN.symbol)
+
+abs_neut_homo <- RenameGenesSeurat(obj = abs_neut_homo,
+                                      assay_name = "RNA",
+                                      oldnames_ordered = homo_df_abs_1_to_1$human_symbol,
+                                      newnames = homo_df_abs_1_to_1$ZFIN.symbol)
+```
+
+```{r ramirez_rename}
+ramirez_count_homo <- ramirez_count%>%
+  mutate(gene_name_zfin= homo_df_abs$ZFIN.symbol[match(hgnc_symbol,homo_df_abs$human_symbol)])%>%
+  na.omit() %>% 
+  pivot_longer(-c(hgnc_symbol,gene_name_zfin), names_to = "sample")%>%
+  group_by(hgnc_symbol, sample) %>% 
+  mutate(value_avg = mean(value))%>%
+  ungroup()%>%
+  group_by(gene_name_zfin, sample) %>%
+  slice_max(n=1, order_by=value_avg, with_ties = FALSE) %>% #top expressed homolog
+  ungroup() %>% 
+  dplyr::select(-hgnc_symbol, -value_avg) %>% 
+  pivot_wider(names_from = "sample", values_from = "value") %>% 
+   dplyr::select(matches("gene_name_zfin"),
+                matches("Neu3h"),
+                matches("Neu6h"),
+                matches("Neu12h"),
+                matches("Neu24h"),
+                matches("Neu48h"),
+                matches("Neu96h"),
+                matches("Neu120h")) 
+
+```
+
+```{r suo_rename}
+attribute <- "detection_rate"
+homo_df_suo <- homo_df[,c("ZFIN.symbol","human_symbol")] %>% distinct_all() %>% mutate(human_symbol = str_replace(human_symbol,"-","."))
+homo_df_suo $zfish_feat_attr <- Seurat::SCTResults(srt_traj, slot = "feature.attributes")[homo_df_suo $ZFIN.symbol,attribute]
+homo_df_suo $human_feat_attr <- Seurat::SCTResults(suo_neut, slot = "feature.attributes")[homo_df_suo $human_symbol,attribute]
+
+#1 to 1 homology matching
+set.seed(1992)
+homo_df_suo_1_to_1 <- homo_df_suo %>%
+  filter(ZFIN.symbol %in% srt_traj@assays$SCT@counts@Dimnames[[1]]) %>% 
+  filter(human_symbol %in% suo_neut@assays$SCT@counts@Dimnames[[1]]) %>%
+  arrange(ZFIN.symbol) %>%
+  na.omit() %>% 
+  group_by(ZFIN.symbol) %>%
+  slice_max(n=1, order_by=human_feat_attr, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  group_by(human_symbol) %>%
+  slice_max(n=1, order_by=zfish_feat_attr, with_ties = FALSE) %>% 
+  ungroup() 
+
+#any not 1-to-1 homolgous?
+apply(homo_df_suo_1_to_1[,c("ZFIN.symbol","human_symbol")],2,function(x){
+  duplicated(x) %>% sum
+})
+
+##change homologous human genes symbols' to zebra fish symbols
+suo_neut_homo <- RenameGenesSeurat(obj = suo_neut,
+                                      assay_name = "SCT",
+                                      oldnames_ordered = homo_df_suo_1_to_1$human_symbol,
+                                      newnames = homo_df_suo_1_to_1$ZFIN.symbol)
+
+suo_neut_homo <- RenameGenesSeurat(obj = suo_neut_homo,
+                                      assay_name = "RNA",
+                                      oldnames_ordered = homo_df_suo_1_to_1$human_symbol,
+                                      newnames = homo_df_suo_1_to_1$ZFIN.symbol)
+
+```
+
+```{r tabula_sapiens_rename}
+attribute <- "detection_rate"
+
+tabula_sapiens_gene_map <- getBM(attributes = c("hgnc_symbol","ensembl_gene_id"),
+           filters    = "ensembl_gene_id",
+           values     = rownames(tabula_sapiens_neut),
+           mart       = useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl",host = "https://feb2023.archive.ensembl.org")) %>% 
+  filter(nchar(hgnc_symbol)!= 0) %>%
+  mutate(detection_rate = Seurat::SCTResults(tabula_sapiens_neut, slot = "feature.attributes")[ensembl_gene_id,attribute]) %>%
+  na.omit()%>%
+  group_by(hgnc_symbol)%>%
+  slice_max(n=1, order_by=detection_rate, with_ties = FALSE)%>%
+  ungroup()%>%
+  group_by(ensembl_gene_id)%>%
+  slice_max(n=1, order_by=detection_rate, with_ties = FALSE)%>%
+  ungroup()  
+
+homo_df_tabula_sapiens <- homo_df[,c("ZFIN.symbol","human_symbol")] %>%
+ distinct_all() %>%
+ left_join(tabula_sapiens_gene_map,by = c("human_symbol"="hgnc_symbol"))
+homo_df_tabula_sapiens $zfish_feat_attr <- Seurat::SCTResults(srt_traj, slot = "feature.attributes")[homo_df_tabula_sapiens $ZFIN.symbol,attribute]
+homo_df_tabula_sapiens $human_feat_attr <- Seurat::SCTResults(tabula_sapiens_neut, slot = "feature.attributes")[homo_df_tabula_sapiens$ensembl_gene_id,attribute]
+
+#1 to 1 homology matching
+set.seed(1992)
+homo_df_tabula_sapiens_1_to_1 <- homo_df_tabula_sapiens %>%
+  filter(ZFIN.symbol %in% srt_traj@assays$SCT@counts@Dimnames[[1]]) %>% 
+  filter(ensembl_gene_id %in% tabula_sapiens_neut@assays$SCT@counts@Dimnames[[1]]) %>%
+  arrange(ZFIN.symbol) %>%
+  na.omit() %>% 
+  group_by(ZFIN.symbol) %>%
+  slice_max(n=1, order_by=human_feat_attr, with_ties = FALSE) %>% 
+  ungroup() %>% 
+  group_by(ensembl_gene_id) %>%
+  slice_max(n=1, order_by=zfish_feat_attr, with_ties = FALSE) %>% 
+  ungroup() 
+
+#any not 1-to-1 homolgous?
+apply(homo_df_tabula_sapiens_1_to_1[,c("ZFIN.symbol","ensembl_gene_id")],2,function(x){
+  duplicated(x) %>% sum
+})
+
+##change homologous human genes symbols' to zebra fish symbols
+tabula_sapiens_neut_homo <- RenameGenesSeurat(obj = tabula_sapiens_neut,
+                                      assay_name = "SCT",
+                                      oldnames_ordered = homo_df_tabula_sapiens_1_to_1$ensembl_gene_id,
+                                      newnames = homo_df_tabula_sapiens_1_to_1$ZFIN.symbol)
+
+tabula_sapiens_neut_homo <- RenameGenesSeurat(obj = tabula_sapiens_neut_homo,
+                                      assay_name = "RNA",
+                                      oldnames_ordered = homo_df_tabula_sapiens_1_to_1$ensembl_gene_id,
+                                      newnames = homo_df_tabula_sapiens_1_to_1$ZFIN.symbol)
+```
+
+```{r evrard_rename}
+evrard_norm_homo <- evrard_norm%>%
+  mutate(gene_name_zfin= homo_df_xie$ZFIN.symbol[match(gene_name,homo_df_xie$mouse_symbol)])%>%
+  na.omit() %>% 
+  pivot_longer(-c(gene_name,gene_name_zfin), names_to = "sample")%>%
+  group_by(gene_name, sample) %>% 
+  mutate(value_avg = mean(value))%>%
+  ungroup()%>%
+  group_by(gene_name_zfin, sample) %>%
+  slice_max(n=1, order_by=value_avg, with_ties = FALSE) %>% #top expressed homolog
+  ungroup() %>% 
+  dplyr::select(-c(gene_name, value_avg)) %>% 
+  pivot_wider(names_from = "sample", values_from = "value") %>% 
+   dplyr::select(matches("gene_name_zfin"),
+                matches("preneu"),
+                matches("immature"),
+                matches("mature"),
+                matches("neu_zt5"),
+                matches("neu_zt13")) %>%
+  column_to_rownames("gene_name_zfin")
+
+```
+
+```{r zhu_bulk_rename, eval = FALSE}
+zhu_log2_cpm_homo <- zhu_log2_cpm %>%
+  mutate(gene_name_zfin= homo_df_xie$ZFIN.symbol[match(SYMBOL,homo_df_xie$mouse_symbol)])%>%
+  na.omit() %>% 
+  pivot_longer(-c(SYMBOL,gene_name_zfin), names_to = "sample")%>%
+  group_by(SYMBOL, sample) %>% 
+  mutate(value_avg = mean(value))%>%
+  ungroup()%>%
+  group_by(gene_name_zfin, sample) %>%
+  slice_max(n=1, order_by=value_avg, with_ties = FALSE) %>% #top expressed homolog
+  ungroup() %>% 
+  dplyr::select(-c(SYMBOL, value_avg)) %>% 
+  pivot_wider(names_from = "sample", values_from = "value") %>% 
+   dplyr::select(gene_name_zfin,
+                matches("PreNeut"),
+                matches("ProNeut"),
+                matches("Neutrophil")) %>%
+  column_to_rownames("gene_name_zfin")
+```
+
+```{r neuroblastoma_rename}
+#replace human genes with zebrafish homologs
+homo_df_nboma <- homo_df %>%
+  left_join(human_gene_attr, by = c("human_symbol"="hgnc_symbol"))%>%
+  dplyr::select(ensembl_gene_id, ZFIN.symbol)%>%
+  distinct_all()
+
+i <- match(str_replace(rownames(nboma_norm), "\\.[0-9]+",""),homo_df_nboma$ensembl_gene_id) %>% na.omit()
+i_human_id <- unique(homo_df_nboma$ensembl_gene_id[i])
+
+nboma_norm_aggr <- apply(nboma_norm[i_human_id,],2,function(x){
+  aggregate(x,
+            list(y = factor(homo_df_nboma$ZFIN.symbol[i],
+                levels = unique(homo_df_nboma$ZFIN.symbol[i]))),
+            mean)$x
+  }) 
+rownames(nboma_norm_aggr) <- unique(homo_df_nboma$ZFIN.symbol[i])
+```
+
+## Homologous consensus table
+```{r, eval = FALSE}
+#mouse homologous across all datasets
+mouse_all_homo_genes <- cbind(xie = homo_df_xie_1_to_1 %>% filter(ZFIN.symbol %in% sc_bulk_gene_order) %>% arrange(ZFIN.symbol) %$% mouse_symbol,
+      neutime = homo_df_neutime_1_to_1 %>% filter(ZFIN.symbol %in% sc_bulk_gene_order) %>% arrange(ZFIN.symbol) %$% mouse_symbol,
+      ballesteros = homo_df_ballesteros_1_to_1 %>% filter(ZFIN.symbol %in% sc_bulk_gene_order) %>% arrange(ZFIN.symbol)%$% mouse_symbol) %>%
+       as.data.frame %>%
+       mutate(n =  apply(.,1,function(x) length(unique(x))),
+              most_common = apply(.,1,function(x) table(x) %>% sort %>% tail(1) %>% names),
+              union = apply(.,1,function(x) paste(unique(x), collapse = ","))) %>%
+       arrange(n)
+
+#human homologous across all datasets
+human_all_homo_genes <- cbind(abs = homo_df_abs_1_to_1 %>% filter(ZFIN.symbol %in% sc_bulk_gene_order) %>% arrange(ZFIN.symbol) %$% human_symbol,
+      suo = homo_df_suo_1_to_1 %>% filter(ZFIN.symbol %in% sc_bulk_gene_order) %>% arrange(ZFIN.symbol) %$% human_symbol,
+      tabula_sapiens = homo_df_tabula_sapiens_1_to_1 %>% filter(ZFIN.symbol %in% sc_bulk_gene_order) %>% arrange(ZFIN.symbol)%$% human_symbol) %>%
+       as.data.frame %>%
+       mutate(n =  apply(.,1,function(x) length(unique(x))),
+              most_common = apply(.,1,function(x) table(x) %>% sort %>% tail(1) %>% names),
+              union = apply(.,1,function(x) paste(unique(x), collapse = ","))) %>%
+       arrange(n)
+```
+

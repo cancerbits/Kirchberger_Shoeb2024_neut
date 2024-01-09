@@ -1,0 +1,269 @@
+---
+title: "child_ref_classification"
+author: "Mohamed_Shoeb"
+date: "10/16/2021"
+output: html_document
+---
+
+## refs {.tabset}
+
+### Add annotations from ref1
+```{r ref_1_classification, cache = TRUE}
+
+anchors <- FindTransferAnchors(
+  reference = srt_obj_ref1,
+  reference.assay = "RNA",
+  query = srt_obj,
+  query.assay = "RNA",
+  normalization.method = "LogNormalize",
+  reduction = "pcaproject",
+  reference.reduction = "pca",
+  #k.filter = NA,
+  dims = 1:ncol(Embeddings(srt_obj_ref1, "pca")))
+
+srt_obj <- TransferData(
+  anchorset = anchors,
+  refdata = list(
+    ref1_clust_major = "ref_clust_major",
+    ref1_cell_type = "sample_characteristic[cell_type]"),
+  weight.reduction = "pcaproject",
+  reference = srt_obj_ref1,
+  query = srt_obj
+  )
+
+srt_obj <- IntegrateEmbeddings(
+  anchorset = anchors,
+  reference = srt_obj_ref1,
+  query = srt_obj,
+  reductions = "pcaproject",
+  new.reduction.name = "ref1.pca"
+  )
+
+srt_obj <- RunUMAP(srt_obj,
+                 reduction = "ref1.pca",
+                 umap.method = 'uwot',
+                 return.model = TRUE,
+                 reduction.name = "ref1.umap_pca_manual",
+                 dims = 1:ncol(Embeddings(srt_obj_ref1, "pca")))
+
+srt_obj <- ProjectUMAP(
+  query = srt_obj, 
+  query.reduction = "ref1.pca", 
+  reference = srt_obj_ref1, 
+  reference.reduction = "pca", 
+  reduction.model = "umap_pca",
+  reduction.name = "ref1.umap_pca_auto")
+
+
+srt_obj <- FindNeighbors(srt_obj, reduction = "ref1.pca",assay="RNA",graph.name = c("RNA_ref1.pca_NN","RNA_ref1.pca_SNN"))
+
+for(res in  c(0.01,0.05, 0.1, 0.2, 0.4)){
+  srt_obj <- FindClusters(srt_obj,
+                                 resolution = res,
+                                 verbose = FALSE,
+                                 graph.name = "RNA_ref1.pca_SNN")
+  srt_obj@meta.data[glue("ref1_res_{res}")] <- srt_obj@meta.data[glue("RNA_ref1.pca_SNN_res.{res}")]
+  srt_obj@meta.data[glue("RNA_ref1.pca_SNN_res.{res}")] <- NULL
+}
+
+#Define Neutrophil subset
+srt_obj$ref1_neut_sub <- srt_obj@meta.data %$%
+  ifelse(ref1_res_0.01 == 0, "neutrophils", "others") 
+
+```
+
+Figure 3c
+```{r}
+#manuscript figures
+ref1_obj_df <- srt_obj@reductions$umap@cell.embeddings %>%
+  cbind(srt_obj@meta.data)%>%
+  as.data.frame() %>%
+  mutate(predicted.ref1_cell_type = str_to_sentence(predicted.ref1_cell_type),
+         predicted.ref1_cell_type = str_replace(predicted.ref1_cell_type, "-", " "),
+         predicted.ref1_cell_type = str_replace(predicted.ref1_cell_type, " t ", " T "),
+         predicted.ref1_cell_type = str_replace(predicted.ref1_cell_type, " b ", " B ")
+         )
+
+set.seed(1992)
+fig_3_ref1 <- ref1_obj_df %>%
+  mutate(predicted.ref1_cell_type = ifelse(predicted.ref1_cell_type =="Neutrophil and myeloid cell", "Neutrophil", "Others")) %>% 
+  arrange(desc(predicted.ref1_cell_type))%>% 
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = predicted.ref1_cell_type),
+             size = 1)+
+  scale_color_discrete(type = c(RColorBrewer::brewer.pal(7,"Dark2")[3],"grey80"))+
+   guides(colour = guide_legend(ncol = 1,
+                               override.aes = list(size = 4)))+
+  scale_y_continuous(expand = expansion(add = c(1,3)))+
+  annotate("segment",
+           x = min(ref1_obj_df$UMAP_1)-1, xend = min(ref1_obj_df$UMAP_1)-3+5,
+           y = min(ref1_obj_df$UMAP_2)-1, yend = min(ref1_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(ref1_obj_df$UMAP_1)-1, xend = min(ref1_obj_df$UMAP_1)-1,
+           y = min(ref1_obj_df$UMAP_2)-1, yend = min(ref1_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(ref1_obj_df$UMAP_1)-1.5, y = min(ref1_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(ref1_obj_df$UMAP_1)+0.2, y = min(ref1_obj_df$UMAP_2)-1.5)+
+ # annotate(geom = "text",
+ #           size = 5,
+ #         label = glue("n = {scales::comma(nrow(ref1_obj_df))}"),
+ #         x = min(ref1_obj_df$UMAP_1)-1, y = median(ref1_obj_df$UMAP_2),
+ #           angle = 90)+
+  labs(color = "Labels from Tang et al, 2017")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.89),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+fig_3_ref1
+```
+
+### Add annotations from ref2
+```{r ref_2_classification, cache = TRUE}
+
+anchors <- FindTransferAnchors(
+  reference = srt_obj_ref2,
+  reference.assay = "RNA",
+  query = srt_obj,
+  query.assay = "RNA",
+  normalization.method = "LogNormalize",
+  reduction = "pcaproject",
+  reference.reduction = "pca",
+  #k.filter = NA,
+  dims = 1:ncol(Embeddings(srt_obj_ref2, "pca")))
+
+srt_obj <- TransferData(
+  anchorset = anchors,
+  refdata = list(
+    ref2_clust_major = "ref_clust_major",
+    ref2_genotype = "characteristics[genotype]"),
+  weight.reduction = "pcaproject",
+  reference = srt_obj_ref2,
+  query = srt_obj
+  )
+
+srt_obj <- IntegrateEmbeddings(
+  anchorset = anchors,
+  reference = srt_obj_ref2,
+  query = srt_obj,
+  reductions = "pcaproject",
+  new.reduction.name = "ref2.pca"
+  )
+
+srt_obj <- RunUMAP(srt_obj,
+                 reduction = "ref2.pca",
+                 umap.method = 'uwot',
+                 return.model = TRUE,
+                 reduction.name = "ref2.umap_pca_manual",
+                 dims = 1:ncol(Embeddings(srt_obj_ref2, "pca")))
+
+srt_obj <- ProjectUMAP(
+  query = srt_obj, 
+  query.reduction = "ref2.pca", 
+  reference = srt_obj_ref2, 
+  reference.reduction = "pca", 
+  reduction.model = "umap_pca",
+  reduction.name = "ref2.umap_pca_auto")
+
+
+srt_obj <- FindNeighbors(srt_obj, reduction = "ref2.pca",assay="RNA",graph.name = c("RNA_ref2.pca_NN","RNA_ref2.pca_SNN"))
+
+for(res in  c(0.01,0.05, 0.1, 0.2, 0.4)){
+  srt_obj <- FindClusters(srt_obj,
+                                 resolution = res,
+                                 verbose = FALSE,
+                                 graph.name = "RNA_ref2.pca_SNN")
+  srt_obj@meta.data[glue("ref2_res_{res}")] <- srt_obj@meta.data[glue("RNA_ref2.pca_SNN_res.{res}")]
+  srt_obj@meta.data[glue("RNA_ref2.pca_SNN_res.{res}")] <- NULL
+}
+
+#Define Neutrophil subset
+srt_obj$ref2_neut_sub <- srt_obj@meta.data %$%
+  ifelse(ref2_res_0.01 == 0, "neutrophils", "others")
+```
+
+Figure 3d
+```{r}
+#manuscript figures
+ref2_obj_df <- srt_obj@reductions$umap@cell.embeddings %>%
+  cbind(srt_obj@meta.data)%>%
+  as.data.frame() %>% 
+  mutate(predicted.ref2_genotype = factor(predicted.ref2_genotype,
+                                          levels = c("Tg(mpx:EGFP)",
+                                                     "Tg(cd41:EGFP)",
+                                                     "Tg(runx1:mCherry)",
+                                                     "Tg(cd4:mCherry)",
+                                                     "Tg(tal1:EGFP)",
+                                                     "Tg(gata1a:GFP)",
+                                                     "Tg(mfap4:tdTomato)")))
+
+set.seed(1992)
+dark2_pal <- RColorBrewer::brewer.pal(7,"Dark2")
+ref2_colors <- c(dark2_pal[3], "grey80")
+
+fig_3_ref2 <-   ref2_obj_df %>%
+  mutate(predicted.ref2_genotype = ifelse(predicted.ref2_genotype =="Tg(mpx:EGFP)", "Neutrophil", "Others")) %>% 
+  arrange(desc(predicted.ref2_genotype))%>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = predicted.ref2_genotype),
+             size = 1)+
+  scale_color_discrete(type = ref2_colors)+
+   guides(colour = guide_legend(ncol = 1,
+                               override.aes = list(size = 4)))+
+  scale_y_continuous(expand = expansion(add = c(1,3)))+
+ annotate("segment",
+           x = min(ref2_obj_df$UMAP_1)-1, xend = min(ref2_obj_df$UMAP_1)-3+5,
+           y = min(ref2_obj_df$UMAP_2)-1, yend = min(ref2_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(ref2_obj_df$UMAP_1)-1, xend = min(ref2_obj_df$UMAP_1)-1,
+           y = min(ref2_obj_df$UMAP_2)-1, yend = min(ref2_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(ref2_obj_df$UMAP_1)-1.5, y = min(ref2_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(ref2_obj_df$UMAP_1)+0.2, y = min(ref2_obj_df$UMAP_2)-1.5)+
+ # annotate(geom = "text",
+ #           size = 5,
+ #         label = glue("n = {scales::comma(nrow(ref1_obj_df))}"),
+ #         x = min(ref1_obj_df$UMAP_1)-1, y = median(ref1_obj_df$UMAP_2),
+ #           angle = 90)+
+  labs(color = "Labels from Athanasiadis et al, 2017")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.89),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+fig_3_ref2
+```

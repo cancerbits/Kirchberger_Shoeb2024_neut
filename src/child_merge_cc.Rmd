@@ -1,0 +1,599 @@
+---
+title: "child_merge_heatmaps_bm_2"
+author: "Mohamed_Shoeb"
+date: "1/31/2022"
+output: html_document
+---
+## bind smoothed heatmaps
+```{r}
+#list of SingleCellExperiments with tradeseq and slingshot results
+sim_obj_list <- list(traj = sim_traj,
+                     xie = sim_xie_bm,
+                     ballesteros = sim_ballesteros_bm,
+                     neutrotime = sim_neutime_bm,
+                     abs = sim_abs,
+                     suo = sim_suo_neut_homo_bm,
+                     tabula_sapiens = sim_tabula_sapiens_neut_homo
+                     )
+#annotations
+dataset_species_annot <- data.frame(dataset = names(sim_obj_list),
+                                    species = c("zebrafish",
+                                                rep("mouse", 3),
+                                                rep("human", 3)))
+
+#aggregated scaled expression matrices of all the datasets
+aggr_avg_traj_scaled <- aggr_pseud_avg(seurat_obj=srt_traj,
+                                ss_df=ss_df_traj,
+                                genes=diff_traj$gene_symbol) %>% 
+  t() %>% 
+  scale() %>% 
+  t() %>% 
+  as.data.frame()
+
+aggr_avg_xie_scaled <- aggr_pseud_avg(seurat_obj=subset(xie_mm_neut_homo,tissue %in% c("WT_BM", "WT_BM_C-kit+Gr1")),
+                                 ss_df=ss_df_xie_bm,
+                                 genes=diff_traj$gene_symbol) %>% 
+  t() %>% 
+  scale() %>% 
+  t() %>% 
+  as.data.frame() 
+
+aggr_avg_ballesteros_scaled <- aggr_pseud_avg(seurat_obj=subset(ballesteros_obj_neut_homo,tissue %in% c("BM")),
+                                 ss_df=ss_df_ballesteros_bm,
+                                 genes=diff_traj$gene_symbol) %>% 
+  t() %>% 
+  scale() %>% 
+  t() %>% 
+  as.data.frame() 
+
+aggr_avg_neutime_scaled <- aggr_pseud_avg(seurat_obj=subset(neutime_obj_homo,tissue %in% c("marrow")),
+                                 ss_df=ss_df_neutime_bm,
+                                 genes=diff_traj$gene_symbol) %>% 
+  t() %>% 
+  scale() %>% 
+  t() %>% 
+  as.data.frame() 
+
+aggr_avg_abs_scaled <- aggr_pseud_avg(seurat_obj=abs_neut_homo,
+                                ss_df=ss_df_abs,
+                                genes=diff_traj$gene_symbol) %>% 
+  t() %>% 
+  scale() %>% 
+  t() %>% 
+  as.data.frame() 
+
+aggr_avg_suo_scaled <- aggr_pseud_avg(seurat_obj=subset(suo_neut_homo,organ %in% c("BM")),
+                                ss_df=ss_df_suo_neut_bm,
+                                genes=diff_traj$gene_symbol) %>% 
+  t() %>% 
+  scale() %>% 
+  t() %>% 
+  as.data.frame() 
+
+aggr_avg_tabula_sapiens_scaled <- aggr_pseud_avg(seurat_obj=subset(tabula_sapiens_neut_homo,tissue_in_publication %in% c("Bone_Marrow")),
+                                ss_df=ss_df_tabula_sapiens_neut_bm,
+                                genes=diff_traj$gene_symbol) %>% 
+  t() %>% 
+  scale() %>% 
+  t() %>% 
+  as.data.frame() 
+
+all_aggr_expr_lst <- list(traj = aggr_avg_traj_scaled,
+                          xie = aggr_avg_xie_scaled,
+                          ballesteros = aggr_avg_ballesteros_scaled,
+                          neutrotime = aggr_avg_neutime_scaled,
+                          abs = aggr_avg_abs_scaled,
+                          suo = aggr_avg_suo_scaled,
+                          tabula_sapiens = aggr_avg_tabula_sapiens_scaled
+                         )
+#common genes
+all_aggr_expr_genes <- all_aggr_expr_lst %>% 
+  lapply(function(x) x %>% na.omit %>% rownames)%>% #remove genes that are NaN because they weere all zeros across the bins
+  c(list(rownames(ramirez_norm))) %>% #common genes with ramirez
+  purrr::reduce(intersect)
+
+#merge all datasets
+all_aggr_expr_df <- lapply(all_aggr_expr_lst,function(df){
+  df[all_aggr_expr_genes,]
+  }) %>% 
+  do.call(cbind, .) %>% 
+  as.data.frame()
+
+#time point dataset annotation
+aggr_timepoints_annot <- sapply(all_aggr_expr_lst, ncol) %>%
+  enframe(name = "dataset", value = "n") %>% 
+  left_join(dataset_species_annot) %>% 
+  uncount(n) %>% 
+  group_by(dataset) %>% 
+  mutate(pseudotime_bin = paste0(dataset, "_", 1:n()),
+         species = factor(species,levels = unique(dataset_species_annot$species))) %>% 
+  ungroup() %>% 
+  column_to_rownames("pseudotime_bin")
+
+colnames(all_aggr_expr_df) <- rownames(aggr_timepoints_annot)
+```
+
+Average expression along bins of maturation trajectories
+```{r}
+all_aggr_expr_avg_lst <- list(traj = aggr_avg_traj,
+                          xie = aggr_avg_xie,
+                          ballesteros = aggr_avg_ballesteros,
+                          neutrotime = aggr_avg_neutime,
+                          abs = aggr_avg_abs,
+                          suo = aggr_avg_suo,
+                          tabula_sapiens = aggr_avg_tabula_sapiens
+                         )
+
+all_aggr_expr_avg_genes <- all_aggr_expr_avg_lst %>% 
+  lapply(function(x) x %>% na.omit %>% rownames)%>% #remove genes that are NaN because they weere all zeros across the bins
+  purrr::reduce(intersect)
+
+#merge all datasets
+all_aggr_expr_avg_df <- lapply(all_aggr_expr_avg_lst,function(df){
+  df[all_aggr_expr_genes,]
+  }) %>% 
+  do.call(cbind, .) %>% 
+  as.data.frame()
+
+colnames(all_aggr_expr_avg_df) <- rownames(aggr_timepoints_annot)
+```
+
+## Order genes in the cross-species heatmap
+```{r}
+#seriate genes based on all dataset
+o <- seriate(all_aggr_expr_df , method = "PCA")
+gene_ser <- all_aggr_expr_df[get_order(o, 1),] %>% rownames()
+#
+gene_order_ortho <- gene_clusters_avg_hc[gene_ser,,drop = FALSE] %>%
+  rownames_to_column("gene_symbol")%$%
+  split(gene_symbol, module) %>%
+  unlist(use.names=FALSE)
+```
+
+## Calculate gene cross-correlation between mammilian systems (mouse and human) and zebrafish 
+```{r}
+#split datasets matrices
+ls_aggr_expr <- lapply(dataset_species_annot$dataset,function(dataset_x){
+  dataset_t <- aggr_timepoints_annot$dataset==dataset_x
+   all_aggr_expr_df[gene_order_ortho,dataset_t]
+   }) 
+names(ls_aggr_expr) <- dataset_species_annot$dataset
+
+#calculate cross-correlation
+## number of lags to be shited to the left and right 
+n_lags <- min(sapply(ls_aggr_expr, ncol))-1 #at least one bin between trajectories
+## Genes cross-correlation dataframe
+ccf_aggr <- lapply(gene_order_ortho,function(gene){
+  # Get gene expression in zebrafish trajectory
+  traj_gene_expr <- ls_aggr_expr[["traj"]][gene,] %>% unlist
+  # Get gene expression in other trajectories, then calculate it's cross-correlation to zebrafish
+  lapply(ls_aggr_expr[c(-1)], function(dataset){
+    dataset_gene_expr <- dataset[gene,] %>% unlist
+    ccf(dataset_gene_expr,traj_gene_expr,n_lags,plot = FALSE)$acf
+    })%>%
+  #bind cross correlation results across datasets, then add lags and gene name information
+  do.call(cbind,.) %>% 
+    as.data.frame %>% 
+    mutate(lags = -n_lags:n_lags) %>% 
+    pivot_longer(-lags, names_to = "dataset", values_to = "correlation") %>% 
+    mutate(gene = gene)
+  })%>%
+  do.call(rbind,.)
+
+## Genes cross-correlation dataframe based on different references
+ccf_aggr_all <- lapply(gene_order_ortho,function(gene){
+  lapply(dataset_species_annot$dataset, function(ref_dataset){
+  # Get gene expression in reference trajectory
+  ref_gene_expr <- ls_aggr_expr[[ref_dataset]][gene,] %>% unlist
+  # Get gene expression in other trajectories, then calculate it's cross-correlation to zebrafish
+  lapply(ls_aggr_expr, function(dataset){
+    dataset_gene_expr <- dataset[gene,] %>% unlist
+    ccf(dataset_gene_expr,ref_gene_expr,n_lags,plot = FALSE)$acf
+    })%>%
+    do.call(cbind,.)%>% 
+    as.data.frame %>% 
+    mutate(lags = -n_lags:n_lags,
+           gene = gene,
+           ref_dataset = ref_dataset) 
+           })%>%
+  #bind cross correlation results across datasets, then add lags and gene name information
+  do.call(rbind,.) %>% 
+    as.data.frame %>%
+    pivot_longer(-c(lags,gene, ref_dataset),
+                 names_to = "query_dataset",
+                 values_to = "correlation")
+  })%>%
+  do.call(rbind,.) %>%
+  mutate(ref_dataset = factor(ref_dataset,levels = dataset_species_annot$dataset),
+         query_dataset = factor(query_dataset,levels = dataset_species_annot$dataset))
+
+#summarize cross-correlation results
+##For each gene, in each dataset, get the lag with maximum correlation
+ccf_max_aggr <- ccf_aggr_all %>%
+  filter(ref_dataset=="traj" & query_dataset!="traj")%>%
+  group_by(gene,query_dataset) %>% 
+  filter(correlation == max(correlation)) %>% 
+  ungroup()%>%
+  mutate(dataset=query_dataset,
+         query_dataset = NULL,
+         ref_dataset=NULL)
+##gene summary statistics across datasets
+ccf_df_aggr <- ccf_max_aggr %>%
+  group_by(gene) %>%
+  summarize(lag_var = var(lags),
+            lag_med = median(lags),
+            cor_var = var(correlation),
+            cor_med = median(correlation)) %>% 
+  column_to_rownames("gene")
+##matrix of maximum correlation lag
+ccf_all <- ccf_max_aggr %>% 
+  dplyr::select(gene,dataset, lags) %>% 
+  pivot_wider(names_from = "dataset",
+              values_from = "lags") %>%
+  column_to_rownames("gene") 
+ccf_all <- ccf_all[,dataset_species_annot$dataset[-1]]
+##average lags across mouse and human datasets
+ccf_all_mean_species <- ccf_all%>% 
+  mutate(mouse = apply(.[,1:3],1,mean),
+         human = apply(.[,4:6],1,mean)) %>% 
+  dplyr::select(mouse, human)
+```
+
+## cross-correlation with different references summary plot
+```{r}
+module_genes_ccf_ref_lst <-ccf_aggr_all %>%
+ group_by(ref_dataset, query_dataset, gene) %>%
+ filter(correlation == max(correlation)) %>%
+ ungroup() %>%
+ left_join(gene_clusters_lst %>% stack %>% dplyr::rename("module" = "ind"), by = c("gene"="values")) %>% 
+ split(., .$module)
+
+module_genes_ccf_ref_aggr <- module_genes_ccf_ref_lst %>%
+ lapply(function(module){
+   module %>%
+    group_by(ref_dataset, query_dataset)%>%
+    summarize(x = median(lags))%>%
+    pivot_wider( names_from = "query_dataset", values_from= "x") %>%
+    ungroup() %>%
+    column_to_rownames("ref_dataset")
+    })
+```
+
+Gene-number sensitivity analysis
+Supplementary Figure 7cde
+```{r, eval = FALSE}
+#list of gene number
+top_n_genes <- seq(50,nrow(diff_traj),50)
+top_n_genes <- c(top_n_genes, nrow(diff_traj))
+genes_list <- lapply(top_n_genes, function(x) {
+  head(diff_traj$gene_symbol,x)
+  })
+names(genes_list) <- paste0("top_",top_n_genes,"_genes")
+
+#aggregated lags matrices for each gene number
+mat_top_n_list <- lapply(genes_list, function(genes){
+  module_genes_ccf_ref_lst <-ccf_aggr_all %>%
+    filter(gene %in% genes)%>%
+    group_by(ref_dataset, query_dataset, gene) %>%
+    filter(correlation == max(correlation)) %>%
+    ungroup() %>%
+    left_join(gene_clusters_lst %>% stack %>% dplyr::rename("module" = "ind"), by = c("gene"="values")) %>% 
+    split(., .$module)
+
+  module_genes_ccf_ref_aggr <- module_genes_ccf_ref_lst %>%
+  lapply(function(module){
+    mat <- module %>%
+      group_by(ref_dataset, query_dataset)%>%
+      summarize(x = median(lags))%>%
+      pivot_wider( names_from = "query_dataset", values_from= "x") %>%
+      ungroup() %>%
+      column_to_rownames("ref_dataset")
+
+    mat[lower.tri(mat)] <- mat[lower.tri(mat)]*-1
+    mat
+      })
+  
+  module_genes_ccf_ref_aggr
+})  
+
+#heatmap annotations
+col_fun = circlize::colorRamp2(-25:25,
+                               colorRampPalette( grDevices::hcl.colors(9,"RdYlBu"))(51) %>% rev())
+row_annot <- rowAnnotation(species = dataset_species_annot$species,
+                              col = list(species = column_annot_cols$species),
+                              show_legend = FALSE,
+                              show_annotation_name = FALSE,
+                              annotation_name_gp = ,
+                              simple_anno_size = unit(0.35, "cm"))
+col_annot <- HeatmapAnnotation(species = dataset_species_annot$species,
+                              col = list(species = column_annot_cols$species),
+                              show_legend = FALSE,
+                              show_annotation_name = FALSE,
+                              annotation_name_gp = ,
+                              simple_anno_size = unit(0.35, "cm"))
+
+#hierarchical clustering list of datasets 
+hclust_top_n_list <- lapply(mat_top_n_list, function(module_aggr_top_n){
+  module_genes_ccf_ref_aggr <- module_aggr_top_n
+  hclust_top_n_lst <- lapply(module_genes_ccf_ref_aggr, function(mat){
+  #hclust_obj <- mat %>% dist %>% hclust %>% as.dendrogram %>% dendsort %>% as.hclust
+  hclust_obj <- mat %>% dist %>% hclust
+  })
+  })
+
+
+#calculate cophenetic distance
+cophenetic_lst <- lapply(names(hclust_top_n_list), function(top_genes_name){
+  top_genes <-hclust_top_n_list[[top_genes_name]]
+  lapply(names(top_genes), function(module_name){
+    module <- top_genes[[module_name]]
+    x <- cophenetic(module) %>% as.matrix
+    x[lower.tri(x)] <- NA
+    x %>%
+      as.data.frame() %>% 
+      rownames_to_column("row") %>%
+      pivot_longer(-row, names_to = "col") %>%
+      as.data.frame %>%
+       filter(!is.na(value),row != col) %>%
+        arrange(row)%>%
+        dplyr::rename(!!top_genes_name:="value") %>%
+        mutate_if(is.factor, as.character)
+        }) %>%
+        setNames(.,names(top_genes))
+      }) %>%
+      setNames(.,names(hclust_top_n_list))
+
+#heatmaps of cophenetic distance
+
+modules <- c("module_1", "module_2", "module_3")
+for(module_i in modules){
+  pdf(glue::glue("heatmap_cophenetic_{module_i}.pdf"),width = 10, height = 7)
+
+  #unclustered cophenetic distance
+  lapply(cophenetic_lst,`[[`,module_i) %>% purrr::reduce(full_join, by = c("row", "col")) %>%
+  tidyr::unite("pair", row, col) %>%
+  column_to_rownames("pair") %>%
+  ComplexHeatmap::Heatmap(col = colorRampPalette( grDevices::hcl.colors(9,"YlGnBu"))(100),
+                          name = "cophenetic\ndistance",
+                          cluster_rows = FALSE,
+                          cluster_columns = FALSE,
+                          column_names_gp = gpar(fontsize = 8)) %>% 
+                          print()
+
+  #clustered cophenetic distance
+  lapply(cophenetic_lst,`[[`,module_i) %>% purrr::reduce(full_join, by = c("row", "col")) %>%
+  tidyr::unite("pair", row, col) %>%
+  column_to_rownames("pair") %>%
+  ComplexHeatmap::Heatmap(col = colorRampPalette( grDevices::hcl.colors(9,"YlGnBu"))(100),
+                            name = "cophenetic\ndistance",
+                          cluster_rows = TRUE,
+                          cluster_columns = FALSE,
+                          column_names_gp = gpar(fontsize = 8))%>% 
+                          print()
+dev.off()
+}
+
+#heatmap of cophenetic distances at n = 1500
+cophenetic_1500_df <- cophenetic_lst$top_1500_genes %>%
+  bind_rows(.id = "module_i")%>%
+  tidyr::unite("pair", row, col, sep = "-")%>%
+  pivot_wider(names_from = module_i, values_from = top_1500_genes)%>%
+  column_to_rownames("pair")
+pair_names <- cophenetic_1500_df %>% rownames %>%str_split("-",simplify=TRUE)
+names_species <- dataset_species_annot %$%setNames(species, dataset)
+pair_species_Pair_1 <- names_species[pair_names[,1]]
+pair_species_Pair_2 <- names_species[pair_names[,2]]
+
+cophenetic_row_annot <- rowAnnotation(Pair_1 = pair_species_Pair_1,
+                                      Pair_2  =  pair_species_Pair_2 ,
+                              col = list(Pair_1 = column_annot_cols$species[pair_species_Pair_1],
+                                          Pair_2  = column_annot_cols$species[pair_species_Pair_2 ]),
+                              show_legend = c(Pair_2 = FALSE),
+                              show_annotation_name = TRUE,
+                              annotation_name_side = "top",
+                              annotation_legend_param = list(Pair_1 = list(title = "Species")) ,
+                              simple_anno_size = unit(0.35, "cm"))
+
+pdf(glue::glue("cophenetic_1500_heatmap.pdf"),width = 10, height = 7)
+cophenetic_1500_df %>%
+  ComplexHeatmap::Heatmap(
+                column_title = "",
+                column_names_side = "top",
+                column_names_rot = 0,
+                column_names_centered = TRUE,
+                #rect_gp = gpar(col = "white", lwd = 0.5),
+                name = "Cophenetic\ndistance",
+                  col =  grDevices::hcl.colors(30,"Viridis"),
+                  cluster_rows = TRUE,
+                  cluster_columns = FALSE,
+                  row_dend_reorder = TRUE,
+                    row_names_gp = gpar(fontsize = 14),
+                    left_annotation = cophenetic_row_annot,
+                    #top_annotation = col_annot
+                    )
+dev.off()
+
+#separate heatmap of aggregated modules lags for each gene number
+pdf("heatmap_module_cross_correlation_dtw_top_n.pdf",width = 20, height = 7)
+lapply(names(hclust_top_n_list), function(top_genes){
+    x <- cophenetic_lst[[top_genes]] %>% lapply(`[[`,3) %>% sapply(max)
+    x1 <- x/max(x)*10
+  hclust_modules_list <- hclust_top_n_list[[top_genes]]
+  ht_modules <- lapply(names(hclust_modules_list), function(module_name){
+    mat <- mat_top_n_list[[top_genes]][[module_name]]
+    hclust_obj <- hclust_modules_list[[module_name]]
+
+    if(module_name == "module_3"){
+    row_annot@anno_list$species@show_legend <- TRUE
+    }else{
+    row_annot@anno_list$species@show_legend <- FALSE
+    }
+
+    ht <- ComplexHeatmap::Heatmap(mat,
+                  column_title = str_replace(module_name,"module_","M"),
+                name = "Median lags",
+                  col =  col_fun,
+                show_heatmap_legend = ifelse(module_name == "module_3", TRUE, FALSE),
+                  cluster_rows = hclust_obj,
+                  cluster_columns = hclust_obj,
+                  column_dend_reorder = TRUE,
+                  row_dend_reorder = TRUE,
+                cell_fun = function(j, i, x, y, w, h, col) { # add text to each grid
+                    grid.text(round(mat[i, j],2), x, y,gp = gpar(fontsize = 12))},
+                    row_names_gp = gpar(fontsize = 14),
+                    left_annotation = row_annot,
+                    top_annotation = col_annot,
+                    column_dend_height = unit(x1[module_name], "mm"))
+  
+    ht_grop <- grid.grabExpr({draw(ht);
+                              decorate_column_dend("Median lags", {grid.yaxis(at = seq(0,ceiling(max(x)),length.out = 5))})
+                              })                             
+          })
+
+  gridExtra::grid.arrange(ht_modules[[1]],
+                          ht_modules[[2]],
+                          ht_modules[[3]],
+                          top = top_genes, ncol = 3)
+  })
+
+dev.off()
+
+#Only show dendrograms separate heatmap of aggregated modules lags for each gene number
+dend_annot <- HeatmapAnnotation(species = dataset_species_annot$species,
+                              col = list(species = column_annot_cols$species),
+                              show_legend = TRUE,
+                              show_annotation_name = FALSE,
+                              annotation_name_gp = ,
+                              simple_anno_size = unit(0.5, "cm"))
+
+pdf("heatmap_module_cross_correlation_dtw_top_1500_dendrogram_only.pdf",width = 9, height = 7)
+lapply("top_1500_genes", function(top_genes){
+    x <- cophenetic_lst[[top_genes]] %>% lapply(`[[`,3) %>% sapply(max)
+    x1 <- x/max(x)*10
+    hclust_modules_list <- hclust_top_n_list[[top_genes]]
+    ht_modules <- lapply(names(hclust_modules_list), function(module_name){
+      mat <- mat_top_n_list[[top_genes]][[module_name]]
+      hclust_obj <- hclust_modules_list[[module_name]]
+
+      if(module_name == "module_3"){
+      dend_annot@anno_list$species@show_legend <- TRUE
+      }else{
+      dend_annot@anno_list$species@show_legend <- FALSE
+      }
+
+      ht <- ComplexHeatmap::Heatmap(mat,
+                  height = 0,
+                  width = 7 * unit(5, "mm"),
+                  column_title = str_replace(module_name,"module_","M"),
+                  name = "Median lags",
+                    col =  col_fun,
+                  show_heatmap_legend =FALSE,
+                    cluster_rows = FALSE,
+                    show_row_names= FALSE,
+                    cluster_columns = hclust_obj,
+                    column_dend_reorder = TRUE,
+                    row_dend_reorder = TRUE,
+                      row_names_gp = gpar(fontsize = 14),
+                      #left_annotation = row_annot,
+                      top_annotation = dend_annot,
+                      column_dend_height = unit(x1[module_name], "mm"))
+    
+      ht_grop <- grid.grabExpr({draw(ht,padding = unit(c(ifelse(module_name == "module_3", 4.8, 0), 0, 0, 2), "mm"));
+                                decorate_column_dend("Median lags", {grid.yaxis(at = seq(0,30,length.out = 5))})
+                                })                             
+            })
+
+    gridExtra::grid.arrange(ht_modules[[1]],
+                            ht_modules[[2]],
+                            ht_modules[[3]],
+                            top = top_genes, ncol = 3)
+  })
+
+dev.off()
+```
+
+## Line-point plots of maximum cross-correlation lags of all genes
+Supplementary Figure 7b
+```{r}
+pdf("cross_correlation_all_1500.pdf",height = 30)
+map(names(gene_clusters_lst), function(module_x){
+  ccf_all[gene_order_ortho,] %>%
+    rownames_to_column("gene_symbol") %>%
+    mutate(gene_symbol = factor(gene_symbol, levels = rev(gene_symbol))) %>% 
+        arrange(gene_symbol) %>% 
+    pivot_longer(-gene_symbol, values_to = "lags", names_to = "dataset") %>% 
+    mutate(species = ifelse(dataset %in% c("xie","ballesteros","neutrotime"), "mouse", "human")) %>% 
+    left_join(gene_clusters_lst %>% stack %>% dplyr::rename("module" = "ind"), by = c("gene_symbol"="values")) %>% 
+    filter(module == module_x) %>%
+    mutate(gene_symbol = factor(gene_symbol, level = unique(gene_symbol)),
+          species = factor(species, levels = c("mouse","human"))) %>% 
+    ggplot()+
+    geom_vline(xintercept=0, color = "grey80", lty = 2)+
+    geom_line(aes(lags, gene_symbol,group = gene_symbol),
+              size = 1,
+              color = "grey90")+
+    geom_point(aes(lags, gene_symbol, color = dataset, shape = dataset),
+               size = 1)+
+    facet_wrap(~species, ncol = 2)+
+    scale_color_manual(values = c("traj" = "#54278f",
+                                "xie" = "#d94801",
+                                "ballesteros" = "#dd3497",
+                                "neutrotime" = "#fc4e2a",
+                                "abs" = "#253494",
+                                "suo" = "#253494",
+                                "tabula_sapiens" = "#253494",
+                                "mouse" = "#fc4e2a",
+                                "human" = "#253494"),
+                     breaks = c("xie", "ballesteros","neutrotime", "abs", "suo", "tabula_sapiens"),
+                     labels = c("Xie 2020", "Ballesteros 2020", "Grieshaber-Bouyer 2020", "Xie 2021", "Suo 2022", "Tabula sapiens 2022"))+
+    scale_shape_manual(values = 1:6,breaks = c("xie", "ballesteros","neutrotime", "abs", "suo", "tabula_sapiens"),
+                     labels = c("Xie 2020", "Ballesteros 2020", "Grieshaber-Bouyer 2020", "Xie 2021", "Suo 2022", "Tabula sapiens 2022"))+
+    labs(title = c("module_1"="M1","module_2"="M2","module_3"="M3","module_4"="M4")[module_x],
+         x = "Lags from zebrafish",
+         y = "Gene symbol")+
+    guides(colour = guide_legend(nrow = 3))+
+    theme(legend.position = "bottom",
+          axis.text.y = element_text(size = 8),
+          axis.ticks.y = element_blank())
+  })
+dev.off()
+```
+
+## line plot of all cross-correlation lags of a selection of genes
+Supplementary Figure 7a
+```{r}
+cc_genes <- c("cebpb", "mmp9", "tgfbi", "amd1", "pomp","txnipa")
+pdf("cross_correlation_line_selection.pdf", height = 6, width = 7)
+ccf_aggr_all %>% 
+  filter(ref_dataset=="traj" & query_dataset!="traj")%>%
+  left_join(dataset_species_annot, by=c("query_dataset"="dataset"))%>%
+  filter(gene %in% cc_genes) %>% 
+  mutate(species = factor(species, levels = c("mouse", "human"))) %>%
+  ggplot(aes(lags, correlation, color = query_dataset))+
+  geom_vline(xintercept = 0, color = "grey90")+
+  geom_line()+
+  facet_grid(gene ~ species, scales = "free_y")+
+  scale_color_manual(name="",values = c("traj" = "#54278f",
+                              "xie" = "#b30000",
+                              "ballesteros" = "#d7301f",
+                              "neutrotime" = "#ef6548",
+                              "abs" = "#08519c",
+                              "suo" = "#2171b5",
+                              "tabula_sapiens" = "#4292c6",
+                              "mouse" = "#fc4e2a",
+                              "human" = "#253494"),
+                    breaks = c("xie", "ballesteros","neutrotime", "abs", "suo", "tabula_sapiens"),
+                    labels = c("Xie 2020", "Ballesteros 2020", "Grieshaber-Bouyer 2020", "Xie 2021", "Suo 2022", "Tabula sapiens 2022"))+
+      guides(colour = guide_legend(nrow = 1, override.aes = list(size = 0.5)))+
+  labs(y = "Cross correlation", x = "Lags from zebrafish")+
+  theme(#aspect.ratio = 1/3,
+        legend.position = "top",
+        title =  element_text(size = 9,hjust = 0.5),
+        strip.text = element_text(size = 10, hjust = 0.5),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 9),
+        legend.text = element_text(size = 7),
+        strip.background = element_blank())
+dev.off()
+```
+

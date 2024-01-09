@@ -1,0 +1,55 @@
+---
+title: "child_libraries"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(eval = TRUE)
+
+```
+
+```{r libraries, message=FALSE}
+library("Seurat")
+library("tidyverse")
+library("magrittr")
+library("cowplot")
+library("BiocParallel")
+library("ezRun")
+library("glue")
+library("here")
+library("GGally")
+library("kableExtra")
+library(harmony)
+library(fs)
+library(scran)
+library(MAST)
+library(EnrichmentBrowser)
+library(org.Hs.eg.db)
+library(patchwork)
+library("deMULTIplex")
+library(RColorBrewer)
+library(gghighlight)
+library(Nebulosa)
+library(slingshot)
+library("SeuratWrappers")
+library(biomaRt)
+library(tradeSeq)
+library(ggrepel)
+library(gage)
+library(fgsea)
+library(clusterProfiler)
+library(GSEABenchmarkeR)
+library(ggforce)
+library(phateR)
+library(dtw)
+library(clusterProfiler)
+library(org.Dr.eg.db)
+library(viridis)
+library(seriation)
+library(ComplexHeatmap)
+library("GENIE3")
+library(DESeq2)
+```
+

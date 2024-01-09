@@ -1,0 +1,1308 @@
+---
+title: ""
+author: "Mohamed_Shoeb"
+date: "04/09/2023"
+output: html_document
+---
+## Load zebrafish neutrophil maturation modules.
+```{r}
+neut_modules_types <- readxl::read_xlsx("supp_tables/supplementary_tables_all.xlsx") %>% 
+    as.data.frame %>% 
+  dplyr::select(matches("gene_symbol|module")) %>% 
+  column_to_rownames("gene_symbol") %>% 
+  apply(2,function(x){
+    split( names(x), x)
+  })
+
+#gene modules
+g_ortho <- neut_modules_types$module_ortho%>% stack
+g_pan <- neut_modules_types$module_pan%>% stack
+
+#Gene annotations
+annotation_df2 <- g_pan %>% as.data.frame %>% column_to_rownames("values")
+```
+
+## Use datasets with multiple cell types to explore the specificity of modules to neutrophil maturation.
+
+### Zebrafish datasets:
+
+#### 1- Zebrafish ref1:
+
+Dataset preparation
+
+```{r}
+#load data
+load_chunk_cache("ref1_dim_red")
+#Add score of zebrafish modules
+srt_obj_ref1 <- AddModuleScore(srt_obj_ref1, g_pan %$% split(values, ind))
+#Define cell annotation table for heatmaps
+annotation_df <- srt_obj_ref1@meta.data %>%
+  dplyr::select(`sample_characteristic[cell_type]`)
+#Define gene annotation table for heatmaps
+annotation_df2 <- g_pan %>%
+  as.data.frame %>%
+  column_to_rownames("values")
+#Expression matrix of the common modules' genes 
+mat_ref1 <- srt_obj_ref1@assays$SCT@data[intersect(g_pan$values, srt_obj_ref1%>%rownames),] %>%
+  as.matrix()
+#Row-wise scaling of expression data
+mat_ref1_Scale <- mat_ref1 %>%
+  t() %>% 
+  scale %>% 
+  t() 
+#Aggregate raw cell counts per cell type, round to nearest intger, and normalize
+mat_ref1_aggr <- Seurat::AggregateExpression(srt_obj_ref1,
+                              assays = "RNA",
+                              return.seurat = FALSE,
+                              group.by = "sample_characteristic[cell_type]",
+                              slot = "counts")$RNA %>% 
+  round() %>% 
+  DESeq2::vst() 
+```
+
+```{r}
+fig_zfish_ref1 <- srt_obj_ref1@meta.data %>%  
+  dplyr::select(Cluster1,
+                Cluster3,
+                `sample_characteristic[cell_type]`) %>% 
+  rownames_to_column("cell_id") %>% 
+  dplyr::rename(`M1_pan score` = "Cluster1",
+                `M3_pan score` = "Cluster3")
+
+write_csv(fig_zfish_ref1,file.path("figures_tables", "fig_tang_scores.csv"))
+
+cols_zfish1 <-  c("neutrophil and myeloid cell"="#7a0177",
+           "mature T cell"="#66A61E",
+           `marrow-derived B cell`= "#E6AB02",
+           "hematopoietic stem cell and thrombocyte" = "#E7298A",
+           "thymic T cell" = "#fc9272",
+           "hematopoietic stem cell" = "#2b8cbe")
+#Module score pair plot
+pdf("zfish_ref1_pair_module_score.pdf")
+centers <- srt_obj_ref1@meta.data %>% 
+  group_by(`sample_characteristic[cell_type]`) %>% 
+  summarize(Cluster1 = mean(Cluster1),
+            Cluster3 = mean(Cluster3))
+srt_obj_ref1@meta.data%>% 
+  ggplot(aes( Cluster1, Cluster3))+
+  geom_point(aes(color = `sample_characteristic[cell_type]`))+
+  ggrepel::geom_label_repel(data = centers,
+             aes(fill = `sample_characteristic[cell_type]`,
+                 #color = `sample_characteristic[cell_type]`, 
+                 label = `sample_characteristic[cell_type]`),
+             size = 5,
+             color = "white")+
+  geom_rug(aes(color = `sample_characteristic[cell_type]`),
+             length = unit(0.02, "npc"))+
+  guides(color = guide_legend(nrow = 3))+
+  scale_color_manual(values = cols_zfish1)+
+  scale_fill_manual(values = cols_zfish1)+
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        axis.text = element_text(size = 15),
+        axis.title = element_text(size = 15))+
+  labs(x = "M1_pan score",
+       y = "M3_pan score")
+dev.off()
+
+    
+
+  
+```
+
+## Zebrafish ref2
+
+### Data preparation
+
+```{r}
+#load data
+load_chunk_cache("ref2_dim_red")
+#Add score of zebrafish modules
+srt_obj_ref2 <- AddModuleScore(srt_obj_ref2, g_pan %$% split(values, ind))
+#Define cell annotation table for heatmaps
+annotation_df <- srt_obj_ref2@meta.data %>%
+  dplyr::select(`characteristics[genotype]`)
+#Define gene annotation table for heatmaps
+annotation_df2 <- g_pan %>%
+  as.data.frame %>%
+  column_to_rownames("values")
+#Expression matrix of the common modules' genes 
+mat_ref2 <- srt_obj_ref2@assays$SCT@data[intersect(g_pan$values, srt_obj_ref2%>%rownames),] %>%
+  as.matrix()
+#Row-wise scaling of expression data
+mat_ref2_Scale <- mat_ref2 %>%
+  t() %>% 
+  scale %>% 
+  t() 
+#Aggregate raw cell counts per cell type, round to nearest intger, and normalize
+mat_ref2_aggr <- Seurat::AggregateExpression(srt_obj_ref2,
+                              assays = "RNA",
+                              return.seurat = FALSE,
+                              group.by = "characteristics[genotype]",
+                              slot = "counts")$RNA %>% 
+  round() %>% 
+  DESeq2::vst() 
+```
+
+Supplementary Figure 10ab
+### Data visualization
+```{r}
+fig_zfish_ref2 <- srt_obj_ref2@meta.data %>% 
+  dplyr::select(Cluster1,
+                Cluster3,
+                `characteristics[genotype]`)  %>% 
+  rownames_to_column("cell_id") %>% 
+  dplyr::rename(`M1_pan score` = "Cluster1",
+                `M3_pan score` = "Cluster3")
+write_csv(fig_zfish_ref2,file.path("figures_tables", "fig_athanasiadis_scores.csv"))
+
+
+cols_zfish2 <-  c(`Tg(mpx:EGFP)` = "#7a0177",
+                  `Tg(lyz:DsRed2)` = "#756bb1",
+                  `Tg(mfap4:tdTomato)` = "#cc4c02",
+                  `Tg(cd4:mCherry)` = "#66A61E",
+                  `Tg(cd41:EGFP)` = "#E7298A",
+                  `Tg(runx1:mCherry)`= "#2b8cbe",
+                  `Tg(tal1:EGFP)` = "#fa9fb5",
+                  `Tg(gata1a:GFP)` = "#fec44f")
+
+#Module score pair plot
+pdf("zfish_ref2_pair_module_score.pdf")
+
+centers <- srt_obj_ref2@meta.data %>% 
+  filter(!`characteristics[genotype]`%in% c("wild type genotype", "transplanted Tg(runx1:mCherry)")) %>% 
+  group_by(`characteristics[genotype]`) %>% 
+  summarize(Cluster1 = mean(Cluster1),
+            Cluster3 = mean(Cluster3))
+srt_obj_ref2@meta.data%>% 
+  filter(!`characteristics[genotype]`%in% c("wild type genotype", "transplanted Tg(runx1:mCherry)")) %>% 
+  ggplot(aes( Cluster1, Cluster3))+
+  geom_point(aes(color = `characteristics[genotype]`))+
+  ggrepel::geom_label_repel(data = centers,
+             aes(fill = `characteristics[genotype]`,
+                 #color =  `sample_characteristic[cell_type]`,
+                 label = `characteristics[genotype]`),
+             color = "white")+
+  geom_rug(aes(color = `characteristics[genotype]`),
+           length = unit(0.02, "npc"))+
+  guides(color = guide_legend(nrow = 3))+
+  scale_color_manual(values = cols_zfish2)+
+  scale_fill_manual(values = cols_zfish2)+
+  theme(legend.position = "none",
+        legend.title = element_blank(),
+        axis.text = element_text(size = 15),
+        axis.title = element_text(size = 15))+
+  labs(x = "M1_pan score",
+       y = "M3_pan score")
+
+dev.off()
+```
+
+## Suo 2022 et al (Mutli-organ development atlas; all hematopoietic-derived cells)
+
+### Data preparation
+
+```{r Suo, cache = TRUE}
+suo <- SeuratDisk::LoadH5Seurat(list.files(here("external_data/Suo/"),
+                                           pattern = "HSC_IMMUNE.embedding.h5seurat",
+                                           full.names = TRUE),
+                                assays = "RNA",
+                                reductions = "umap",
+                                meta.data = FALSE)  
+
+suo_h5 <- hdf5r::h5file(list.files(here("external_data/Suo/"),
+                                   pattern = "HSC_IMMUNE.embedding.h5seurat",
+                                   full.names = TRUE), mode = 'r+')
+suo_cellnames <- suo_h5[["cell.names"]][]
+suo_metadata_h5 <- suo_h5[["meta.data"]]
+
+suo_metadata <- sapply(suo_metadata_h5$ls()$name, function(group){
+  suo_metadata_h5[[group]][["levels"]][][suo_metadata_h5[[group]][["values"]][]]
+})%>%
+  do.call(cbind,.) %>%
+  as.data.frame()
+rownames(suo_metadata) <- suo_cellnames
+suo <- suo[,suo_cellnames]
+suo@meta.data <- suo_metadata
+DimPlot(suo,group = "celltype_annotation",label=TRUE)+theme(legend.position="none")
+hdf5r::h5close(suo_h5)
+rm(suo_h5)
+#
+suo_aggr <- Seurat::AggregateExpression(suo,
+                                        assays = "RNA",
+                                        features = homo_df_suo_1_to_1$human_symbol,
+                                        return.seurat = FALSE,
+                                        group.by = "celltype_annotation",
+                                        slot = "counts")$RNA %>% 
+  round() %>% 
+  DESeq2::vst() 
+rownames(suo_aggr) <- homo_df_suo_1_to_1$ZFIN.symbol
+
+##
+suo$cell_organ <- paste0(suo$celltype_annotation, "-", suo$organ)
+suo_organ_aggr <- Seurat::AggregateExpression(suo,
+                                              assays = "RNA",
+                                              features = homo_df_suo_1_to_1$human_symbol,
+                                              return.seurat = FALSE,
+                                              group.by = "cell_organ",
+                                              slot = "counts")$RNA %>% 
+  round() %>% 
+  DESeq2::vst() 
+rownames(suo_organ_aggr) <- homo_df_suo_1_to_1$ZFIN.symbol
+suo_organ_aggr <- suo_organ_aggr %>%
+  as.data.frame() %>% 
+  dplyr::select(-matches("DOUBLET|LOW_QUALITY|HIGH_MITO|nan|INCONSISTENT|CONTAMINANTS"))
+
+#
+suo_ssgsea <- GSVA::gsva(suo_aggr %>% as.matrix(),
+                         neut_modules_types$module_pan,
+                         method = "ssgsea") %>%
+  as.data.frame 
+#
+suo_organ_aggr_ls <- lapply(suo$organ %>% unique(), function(x){
+  suo_organ_aggr %>%
+    as.data.frame %>%
+    dplyr::select(matches(paste0("-",x,"$")))
+})
+names(suo_organ_aggr_ls) <- suo$organ %>% unique()
+
+suo_organ_ssgsea_ls <- lapply(suo_organ_aggr_ls, function(organ_df){
+  GSVA::gsva(organ_df %>% as.matrix(),
+             neut_modules_types$module_pan,
+             method = "ssgsea") %>%
+    as.data.frame 
+})
+
+#
+organs_neuts_lst <- suo@meta.data %>% 
+  filter(predicted_doublets=="False",
+         str_detect(celltype_annotation,"DOUBLET|LOW_QUALITY|HIGH_MITO|nan|INCONSISTENT|CONTAMINANTS", negate = TRUE),
+         celltype_annotation %in% c("NEUTROPHIL","MYELOCYTE","PROMYELOCYTE"))%$% table(organ) %>% sort
+   rownames_to_column("cell_id") %$%
+   split(cell_id, celltype_annotation)
+
+organs_mono_lst <- suo@meta.data %>% 
+  filter(predicted_doublets=="False",
+         str_detect(celltype_annotation,"DOUBLET|LOW_QUALITY|HIGH_MITO|nan|INCONSISTENT|CONTAMINANTS", negate = TRUE),
+         str_detect(celltype_annotation,"MONO")) %>%
+   rownames_to_column("cell_id") %$%
+   split(cell_id, celltype_annotation)
+
+organs_mac_lst <- suo@meta.data %>% 
+  filter(predicted_doublets=="False",
+         str_detect(celltype_annotation,"DOUBLET|LOW_QUALITY|HIGH_MITO|nan|INCONSISTENT|CONTAMINANTS", negate = TRUE),
+         str_detect(celltype_annotation,"MAC")) %>%
+   rownames_to_column("cell_id") %$%
+   split(cell_id, celltype_annotation)
+```
+
+Supplementary Figure 11
+### Data Visualization
+
+```{r}
+tissue_lst <- lapply(c("BM","LI","SK", "SP"), function(organ_x){
+  suo_organ_ssgsea_ls[[organ_x]] %>% 
+    rownames_to_column("mod") %>% 
+    mutate(mod = str_replace(mod, "\\..+",""),
+           mod_pan = str_extract(mod, "M."),
+           mod = NULL)%>% 
+    pivot_longer(-mod_pan) %>% 
+    pivot_wider(names_from = "mod_pan", values_from = "value") %>% 
+    mutate(name = str_replace(name,paste0("-",organ_x),""),
+           cell_type = case_when(name %in% c("NEUTROPHIL","MYELOCYTE","PROMYELOCYTE") ~ "Neutrophil",
+                               str_detect(name, "MONOCYTE") ~ "MONOCYTE",
+                               str_detect(name, "MACROPHAGE") ~ "MACROPHAGE",
+                               str_detect(name, "DC") ~ "DC",
+                               str_detect(name, "CYCLING") ~ "Others",
+                               str_detect(name, "MK|ERY") ~ "MK,ERY",
+                               str_detect(name, "_B") ~ "B-cell",
+                               str_detect(name, "TREG|T$|NK") ~ "T-cell,NK",
+                               TRUE ~ "Others"),
+         cell_type = factor(cell_type, levels = c("Neutrophil", "MACROPHAGE", "MONOCYTE", "DC","MK,ERY","Cycling","B-cell","T-cell,NK", "Others")))})
+names(tissue_lst) <- c("BM","LI","SK", "SP")
+tissue_df <- bind_rows(tissue_lst, .id = "tissue") %>% 
+  dplyr::select(-M2)
+write_csv(tissue_df,file.path("figures_tables", "fig_suo_scores.csv"))
+
+cols_suo <-  c(`Neutrophil` = "#7a0177",
+                  `MONOCYTE` = "#cc4c02",
+               `MACROPHAGE` = "#41b6c4",
+                  `T-cell,NK` = "#66A61E",
+                  `Others` = "#E7298A",
+                  `DC`= "#2b8cbe",
+                  `B-cell` = "#fa9fb5",
+                  `MK,ERY` = "#fec44f")
+
+pdf("suo_organ_pair_module_score.pdf")
+organs_suo <-c(`Bone marrow` = "BM",`Liver` = "LI",`Skin` = "SK", `Spleen` = "SP")
+lapply(organs_suo, function(organ_x){
+  tissue_lst[[organ_x]] %>% 
+    ggplot(aes( M1, M3))+
+    geom_point(aes(color = cell_type),
+               size = 3.5)+
+    geom_rug(aes(color = cell_type),
+             length = unit(0.02, "npc"))+
+    # geom_path(aes(color = cell,
+    #               group = cell),
+    #           arrow = arrow(type = "closed",
+    #                         angle = 30,
+    #                         length = unit(0.1, "inches")),
+    #           show.legend = FALSE)+
+    ggrepel::geom_text_repel(data = . %>% 
+                               filter(cell_type %in% c("Neutrophil", "MONOCYTE", "MACROPHAGE")),
+                             aes(color = cell_type, label = name),
+                             size = 2.5,
+                             max.overlaps = Inf, 
+                             show.legend = FALSE)+
+    # ggrepel::geom_label_repel(aes(fill = cell, 
+    #                               label = name),
+    #            color = "white",
+    #            show.legend = FALSE)+
+    scale_color_manual(values = cols_suo)+
+    guides(color = guide_legend(nrow = 2))+
+    theme(legend.position = "top",
+          legend.title = element_blank())+
+    labs(title = organs_suo[organs_suo == organ_x] %>% names,
+         x = "M1_pan score",
+         y = "M3_pan score")
+  })
+
+dev.off()
+```
+
+Supplementary Figure 13
+```{r}
+order_df <- lapply(c("BM","LI","SK", "SP"), function(organ_x){
+  suo_organ_ssgsea_ls[[organ_x]] %>% 
+    rownames_to_column("mod") %>% 
+    mutate(mod = str_replace(mod, "\\..+",""),
+           mod_pan = str_extract(mod, "M."),
+           mod = NULL)%>% 
+    pivot_longer(-mod_pan) %>% 
+    pivot_wider(names_from = "mod_pan", values_from = "value") %>% 
+    mutate(organ = organ_x,
+           name = str_replace(name,paste0("-",organ_x),""),
+           cell_type = case_when(name %in% c("NEUTROPHIL","MYELOCYTE","PROMYELOCYTE") ~ "Neutrophil",
+                               str_detect(name, "MONOCYTE") ~ "MONOCYTE",
+                               str_detect(name, "MACROPHAGE") ~ "MACROPHAGE",
+                               str_detect(name, "DC") ~ "DC",
+                               str_detect(name, "CYCLING") ~ "Cycling",
+                               str_detect(name, "MK|ERY") ~ "MK,ERY",
+                               str_detect(name, "_B") ~ "B-cell",
+                               str_detect(name, "TREG|T$|NK") ~ "T-cell,NK",
+                               TRUE ~ "Others"),
+         cell_type = factor(cell_type, levels = c("Neutrophil",  "MONOCYTE","MACROPHAGE", "DC","MK,ERY","Cycling","B-cell","T-cell,NK", "Others")),
+         M_ratio = M3/M1)}) %>% 
+  bind_rows() %>% 
+  filter(name != "MACROPHAGE_ERY") %>% 
+  group_by(organ, cell_type) %>% 
+  mutate(M1_rank = rank(1/M1)) %>% 
+  ungroup() %>% 
+  group_by(organ) %>% 
+  filter(sum(cell_type == "Neutrophil")==3,
+         cell_type %in% c("Neutrophil", "MACROPHAGE", "MONOCYTE")) %>% 
+  ungroup() %>% 
+  mutate(name = fct_relevel(name, "MACROPHAGE_TREM2","MACROPHAGE_KUPFFER_LIKE","MACROPHAGE_IRON_RECYCLING","MACROPHAGE_LYVE1_HIGH","MACROPHAGE_MHCII_HIGH","MACROPHAGE_PROLIFERATING","MONOCYTE_III_IL1B","MONOCYTE_II_CCR2","MONOCYTE_I_CXCR4", "PROMONOCYTE","NEUTROPHIL","MYELOCYTE", "PROMYELOCYTE")) 
+
+order_df %>% 
+  dplyr::select(organ, name, M1_rank) %>% 
+  dplyr::rename(orderd_maturation_stage="name") %>% 
+  write_csv(file.path("figures_tables", "fig_suo_order.csv"))
+
+pdf("suo_organ_pair_module_score_tissue_order.pdf",height = 5)
+ order_df %>% 
+  ggplot(aes(organ, name, fill = M1_rank, label = M1_rank))+
+  geom_tile(color = "white",size = 0.1)+
+  geom_text(color = "white",size = 5)+
+  viridis::scale_fill_viridis()+
+  scale_x_discrete(position = "top")+ 
+  facet_grid(cell_type~.,
+             scales = "free_y",
+             space = "free_y")+
+   labs(y = "Orderd maturation stages",
+        fill = "M1_pan\nscore")
+
+dev.off()
+```
+
+## Suo 2022 et al (Mutli-organ development atlas; all stromal cells)
+
+### Data preparation
+```{r}
+suo_stroma <- SeuratDisk::LoadH5Seurat(list.files(here("external_data/Suo/"),
+                                pattern = "STROMA.embedding.h5seurat",
+                                full.names = TRUE),
+                                assays = "RNA",
+                                reductions = "umap",
+                                meta.data = FALSE)  
+
+suo_stroma_h5 <- hdf5r::h5file(list.files(here("external_data/Suo/"),
+                                pattern = "STROMA.embedding.h5seurat",
+                                full.names = TRUE), mode = 'r+')
+suo_stroma_cellnames <- suo_stroma_h5[["cell.names"]][]
+suo_stroma_metadata_h5 <- suo_stroma_h5[["meta.data"]]
+
+suo_stroma_metadata <- sapply(suo_stroma_metadata_h5$ls()$name, function(group){
+  suo_stroma_metadata_h5[[group]][["levels"]][][suo_stroma_metadata_h5[[group]][["values"]][]]
+  })%>%
+  do.call(cbind,.) %>%
+  as.data.frame()
+rownames(suo_stroma_metadata) <- suo_stroma_cellnames
+suo_stroma <- suo_stroma[,suo_stroma_cellnames]
+suo_stroma@meta.data <- suo_stroma_metadata
+hdf5r::h5close(suo_stroma_h5)
+rm(suo_stroma_h5)
+
+#
+organ_stroma_lst <- suo_stroma@meta.data %>% 
+  filter(predicted_doublets=="False",
+         str_detect(celltype_annotation,"DOUBLET|LOW_QUALITY|HIGH_MITO|nan|INCONSISTENT|CONTAMINANTS", negate = TRUE)) %>%
+  rownames_to_column("cell_id") %$% 
+  split(cell_id, organ)
+organ_stroma_lst <- organ_stroma_lst[c("BM","LI","SK", "SP", "TH", "YS")]
+#
+fracs <- seq(1000,0,by = -100)
+names(fracs) <- paste0("n","_",fracs)
+set.seed(1992)
+stroma_counts <- lapply(c("BM","LI","SK", "SP", "TH", "YS"), function(organ){
+  reps <- 20
+  reps_mat <- lapply(seq(reps),function(i){
+    frac_mix_aggr <- sapply(fracs, function(n){
+      s_cells <- sample(organ_stroma_lst[[organ]], n)
+      s_aggr <- suo_stroma@assays$RNA@counts[homo_df_suo_1_to_1$human_symbol,s_cells] %>% 
+        as.matrix() %>%
+        rowSums()
+      s_aggr
+      }) 
+    colnames(frac_mix_aggr) <- paste(colnames(frac_mix_aggr), organ,i, sep = "_")
+    rownames(frac_mix_aggr) <- homo_df_suo_1_to_1$ZFIN.symbol
+    frac_mix_aggr
+    })
+  names(reps_mat) <- seq(reps)
+  reps_mat
+  }) %>%
+  setNames(.,c("BM","LI","SK", "SP", "TH", "YS"))
+
+set.seed(1992)
+neut_counts <- lapply(c("BM","LI","SK", "SP", "TH", "YS"), function(organ){
+  reps <- 20
+  reps_mat <- lapply(seq(reps),function(i){
+    neut_stages_fracs_lst <- lapply(organs_neuts_lst, function(neut_stage){
+      frac_mix_aggr <- sapply(fracs, function(n){
+        n_cells <- sample(neut_stage, 1000-n)
+        n_aggr <- suo@assays$RNA@counts[homo_df_suo_1_to_1$human_symbol,n_cells] %>% 
+          as.matrix() %>%
+          rowSums()
+        n_aggr
+      }) 
+      colnames(frac_mix_aggr) <- paste(colnames(frac_mix_aggr), organ,i, sep = "_")
+      rownames(frac_mix_aggr) <- homo_df_suo_1_to_1$ZFIN.symbol
+      frac_mix_aggr
+      })
+    })
+  names(reps_mat) <- seq(reps)
+  reps_mat
+  }) %>%
+  setNames(.,c("BM","LI","SK", "SP", "TH", "YS"))
+
+set.seed(1992)
+mono_counts <- lapply(c("BM","LI","SK", "SP", "TH", "YS"), function(organ){
+  reps <- 20
+  reps_mat <- lapply(seq(reps),function(i){
+    mono_stages_fracs_lst <- lapply(organs_mono_lst, function(mono_stage){
+      frac_mix_aggr <- sapply(fracs, function(n){
+        n_cells <- sample(mono_stage, 1000-n)
+        n_aggr <- suo@assays$RNA@counts[homo_df_suo_1_to_1$human_symbol,n_cells] %>% 
+          as.matrix() %>%
+          rowSums()
+        n_aggr
+      }) 
+      colnames(frac_mix_aggr) <- paste(colnames(frac_mix_aggr), organ,i, sep = "_")
+      rownames(frac_mix_aggr) <- homo_df_suo_1_to_1$ZFIN.symbol
+      frac_mix_aggr
+      })
+    })
+  names(reps_mat) <- seq(reps)
+  reps_mat
+  }) %>%
+  setNames(.,c("BM","LI","SK", "SP", "TH", "YS"))
+
+set.seed(1992)
+mac_counts <- lapply(c("BM","LI","SK", "SP", "TH", "YS"), function(organ){
+  reps <- 20
+  reps_mat <- lapply(seq(reps),function(i){
+    mac_stages_fracs_lst <- lapply(organs_mac_lst[lengths(organs_mac_lst)>=1000], function(mac_stage){
+      frac_mix_aggr <- sapply(fracs, function(n){
+        n_cells <- sample(mac_stage, 1000-n)
+        n_aggr <- suo@assays$RNA@counts[homo_df_suo_1_to_1$human_symbol,n_cells] %>% 
+          as.matrix() %>%
+          rowSums()
+        n_aggr
+      }) 
+      colnames(frac_mix_aggr) <- paste(colnames(frac_mix_aggr), organ,i, sep = "_")
+      rownames(frac_mix_aggr) <- homo_df_suo_1_to_1$ZFIN.symbol
+      frac_mix_aggr
+      })
+    })
+  names(reps_mat) <- seq(reps)
+  reps_mat
+  }) %>%
+  setNames(.,c("BM","LI","SK", "SP", "TH", "YS"))
+
+
+mye_mix <- lapply(c("BM","LI","SK", "SP", "TH", "YS"), function(organ){
+  stroma_aggr <- stroma_counts[[organ]] %>% 
+    do.call(cbind,.)
+  
+  neut_aggr <- lapply(neut_counts[[organ]], function(x){
+      neut_stages <- names(x)
+      l <- lapply(neut_stages, function(neut){
+        mat <- x[[neut]]
+        colnames(mat) <- paste(colnames(mat), neut, sep = "_")
+        mat
+        }) %>% 
+        do.call(cbind, .)
+      l
+      }) %>% 
+    do.call(cbind,.)
+
+  mono_aggr <- lapply(mono_counts[[organ]], function(x){
+    mono_stages <- names(x)
+    l <- lapply(mono_stages, function(mono){
+      mat <- x[[mono]]
+      colnames(mat) <- paste(colnames(mat), mono, sep = "_")
+      mat
+      }) %>% 
+      do.call(cbind, .)
+    l
+    }) %>% 
+  do.call(cbind,.)
+  
+  mac_aggr <- lapply(mac_counts[[organ]], function(x){
+    mac_stages <- names(x)
+    l <- lapply(mac_stages, function(mac){
+      mat <- x[[mac]]
+      colnames(mat) <- paste(colnames(mat), mac, sep = "_")
+      mat
+      }) %>% 
+      do.call(cbind, .)
+    l
+    }) %>% 
+  do.call(cbind,.)
+
+  l <- list(neut = neut_aggr + (cbind(stroma_aggr, stroma_aggr, stroma_aggr)),
+       mono = mono_aggr + (cbind(stroma_aggr, stroma_aggr, stroma_aggr, stroma_aggr)),
+       mac = mac_aggr + (cbind(stroma_aggr, stroma_aggr, stroma_aggr, stroma_aggr, stroma_aggr,stroma_aggr))
+       )
+  cbind(l$neut, l$mono, l$mac)
+  })%>%
+  do.call(cbind,.)
+
+mye_stroma_mix_ssgsea <- mye_mix %>% 
+  DESeq2::vst() %>% 
+  GSVA::gsva(neut_modules_types$module_pan,
+             method = "ssgsea") %>%
+      as.data.frame %>% 
+      rownames_to_column("mod")
+
+
+neut_mix <- lapply(c("BM","LI","SK", "SP", "TH", "YS"), function(organ){
+  stroma_aggr <- stroma_counts[[organ]] %>% 
+    do.call(cbind,.)
+  
+  neut_aggr <- lapply(neut_counts[[organ]], function(x){
+      neut_stages <- names(x)
+      l <- lapply(neut_stages, function(neut){
+        mat <- x[[neut]]
+        colnames(mat) <- paste(colnames(mat), neut, sep = "_")
+        mat
+        }) %>% 
+        do.call(cbind, .)
+      l
+      }) %>% 
+    do.call(cbind,.)
+  
+  neut = neut_aggr + cbind(stroma_aggr, stroma_aggr, stroma_aggr)
+  return(neut)
+  }) %>% 
+  do.call(cbind,.)
+
+neut_stroma_mix_ssgsea <- neut_mix %>% 
+  DESeq2::vst() %>% 
+  GSVA::gsva(neut_modules_types$module_pan,
+             method = "ssgsea") %>%
+      as.data.frame %>% 
+      rownames_to_column("mod")
+
+
+```
+
+Supplementary Figure 15
+```{r}
+mix_gg_df <- neut_stroma_mix_ssgsea %>%
+  lapply( bind_rows) %>%
+  bind_rows(.id = "organ") %>% 
+    mutate(mod_pan = str_extract(mod, "M."),
+           mod = NULL)%>% 
+    pivot_longer(n_1000:n_0) %>%
+  group_by(organ ,mod_pan , name ) %>%
+  summarize(value = median(value)) %>% 
+  ungroup() %>% 
+    pivot_wider(names_from = "mod_pan", values_from = "value")%>%
+  mutate(stromal = str_extract(name, "[0-9]+") %>% as.numeric,
+         neut = 1000-stromal,
+         stromal = stromal/1000,
+         neut = neut/1000) %>% 
+    arrange(organ, stromal)
+
+write_csv(mix_gg_df,file.path("figures_tables", "fig_suo_dilution.csv"))
+
+pdf("mix_stroma_neut2.pdf",width = 13)
+ggplot() +
+  geom_scatterpie(data =mix_gg_df %>% head,
+                  aes(x=M1, y=M3, group=name),
+                   pie_scale = 2,
+                  cols=c("stromal", "neut")) +
+    coord_fixed(0.7)+
+    theme(legend.position = "top")+
+  facet_grid(.~organ)
+dev.off()
+
+pdf("mix_stroma_neut3.pdf")
+ggplot(mix_gg_df) +
+  geom_scatterpie(data =mix_gg_df,
+                  aes(x=M1, y=M3, group=name),
+                   pie_scale = 1,
+                  cols=c("stromal", "neut")) +
+  geom_path(aes(x=M1, y=M3, group = organ))+
+    coord_fixed(0.7)+
+    theme(legend.position = "top")
+dev.off()
+
+
+neut_stroma_mix_ssgsea %>%
+  lapply( bind_rows) %>%
+  bind_rows(.id = "organ") %>%
+    mutate(mod_pan = str_extract(mod, "M."),
+           mod = NULL) %>% 
+     pivot_longer(n_1000:n_0) %>% 
+  mutate(stromal = str_extract(name, "[0-9]+") %>% as.numeric,
+         stromal= stromal/1000) %>% 
+  #   pivot_wider(names_from = "mod_pan", values_from = "value")%>%
+  # mutate(stromal = str_extract(name, "[0-9]+") %>% as.numeric,
+  #        neut = 1000-stromal,
+  #        stromal = stromal/1000,
+  #        neut = neut/1000) %>% 
+  ggplot(aes(mod_pan, value))+
+  geom_point()+
+  #geom_violin()+
+  geom_line(aes(group = name, color = stromal))+
+  facet_grid(organ~.)
+
+neut_stroma_mix_ssgsea %>%
+  lapply( bind_rows) %>%
+  bind_rows(.id = "organ") %>%
+    mutate(mod_pan = str_extract(mod, "M."),
+           mod = NULL) %>% 
+     pivot_longer(n_1000:n_0) %>% 
+    pivot_wider(names_from = "mod_pan", values_from = "value")%>%
+  pivot_longer(M1:M3, names_to = "mod" ) %>% 
+  mutate(stromal = str_extract(name, "[0-9]+") %>% as.numeric,
+         neut = 1000-stromal,
+         stromal = stromal/1000,
+         neut = neut/1000,
+         g = paste(organ, mod)) %>%
+  filter(mod %in% c("M1", "M3")) %>% 
+  ggplot(aes(neut, value, color = mod))+
+  geom_point(size = 1)+
+  #geom_jitter()+
+  #geom_violin()+
+  geom_smooth(aes(group = g))+
+  facet_grid(organ~.)+
+  labs(x = "Fraction of mature neutrophils",
+         y =  "Module score")
+
+mix_gg_df <- neut_stroma_mix_ssgsea2 %>%
+  as.data.frame() %>%
+  pivot_longer(-mod) %>%
+  #filter(str_detect(name, "NEUTROPHIL")) %>% 
+  separate(name, into = c("neut_stage", "neut_percent", "organ", "itr")) %>%
+  pivot_wider(names_from = "mod", values_from = "value") %>%
+  mutate(neut_percent = as.numeric(neut_percent)/1000) %>% 
+  pivot_wider(names_from = "neut_stage", values_from = "neut_percent", values_fill = 0) %>% 
+  mutate(neut_percent = MYELOCYTE+NEUTROPHIL+PROMYELOCYTE,
+         #neut_percent = NEUTROPHIL,
+         stromal_percent = 1- neut_percent,
+         name = 1:nrow(.)) 
+
+
+
+
+mix_gg_df <- mye_stroma_mix_ssgsea %>%
+  as.data.frame() %>%
+  pivot_longer(-mod) %>%
+  filter(!str_detect(name, "_ERY")) %>% 
+  mutate(name = str_replace(name, "_I_", "-I-"),
+         name = str_replace(name, "_II_", "-II-"),
+         name = str_replace(name, "_III_", "-III-"),
+         name = str_replace(name, "_IRON_RECYCLING", "-IRON-RECYCLING"),
+         name = str_replace(name, "_LYVE1_HIGH", "-LYVE1-HIGH"),
+         name = str_replace(name, "_KUPFFER_LIKE", "-KUPFFER-LIKE"),
+         name = str_replace(name, "_MHCII_HIGH", "-MHCII-HIGH"),
+         name = str_replace(name, "_PROLIFERATING", "-PROLIFERATING"),
+         name = str_replace(name, "_TREM2", "-_TREM2")) %>% 
+  separate(name, into = c(NA,"stromal_percent", "organ", "itr", "mye_stage"),sep = "_") %>%
+  mutate(mye_type = case_when(str_detect(mye_stage, "MONO") ~ "MONOCYTE",
+                              str_detect(mye_stage, "MAC") ~ "MACROPHAGE",
+                              str_detect(mye_stage, "NEUT|MYELOCYTE|PROMYELOCYTE") ~ "NEUTROPHIL"),
+         stage_itr = paste(mye_stage, itr, sep = "_")) %>% 
+  pivot_wider(names_from = "mod", values_from = "value") %>%
+  mutate(stromal_percent = as.numeric(stromal_percent)/1000,
+        stage_percent = 1-stromal_percent ) %>% 
+  pivot_wider(names_from = "mye_stage", values_from = "stage_percent", values_fill = 0) %>% 
+  mutate(neut_percent = MYELOCYTE+NEUTROPHIL+PROMYELOCYTE,
+         name = 1:nrow(.),
+         mye_type = factor(mye_type, levels = c("NEUTROPHIL", "MONOCYTE", "MACROPHAGE"))) %>% 
+  filter(organ %in% c("BM","LI","SK", "SP"))
+
+
+clrs <- c("stromal_percent"= "grey80",
+          "NEUTROPHIL" = "#31a354", "MYELOCYTE" = "#addd8e", "PROMYELOCYTE"= "#d9f0a3",
+          "MONOCYTE-I-CXCR4" = "#cc4c02", "MONOCYTE-II-CCR2" = "#fe9929", "MONOCYTE-III-IL1B" = "#fee391", "PROMONOCYTE" = "#fff7bc",
+          "MACROPHAGE-MHCII-HIGH" = "#7a0177", "MACROPHAGE-KUPFFER-LIKE" = "#c51b8a", "MACROPHAGE-IRON-RECYCLING" = "#f768a1", "MACROPHAGE-LYVE1-HIGH" = "#fbb4b9", "MACROPHAGE-PROLIFERATING" = "#feebe2")
+
+pdf("mix_stroma_neut5.pdf",width = 15, height = 10)
+ggplot()+
+      coord_fixed()+
+  geom_scatterpie(data =mix_gg_df %>% filter(itr=="1"),
+                  aes(x=M1_pan, y=M3_pan, group=name),
+                  pie_scale = 2,
+                  color = NA,
+                  cols = clrs %>% names) +
+  scale_fill_manual(values = clrs) +
+  guides(color = guide_legend(nrow = 5),
+         fill = guide_legend(nrow = 5))+
+  theme(legend.position = "top") +
+  facet_grid(mye_type~organ)
+
+ggplot()+
+      coord_fixed()+
+  geom_scatterpie(data =mix_gg_df %>% filter(itr=="1"),
+                  aes(x=M1_pan, y=M3_pan, group=name),
+                  pie_scale = 2,
+                  color = NA,
+                  cols = clrs %>% names) +
+  geom_smooth(data =mix_gg_df %>% filter(itr=="1"),
+              aes(x=M1_pan, y=M3_pan, group=stage_itr),
+              color = "black",
+              size = 0.2, 
+              method = lm,
+              se = FALSE)+
+  scale_fill_manual(values = clrs) +
+  guides(color = guide_legend(nrow = 5),
+         fill = guide_legend(nrow = 5))+
+  theme(legend.position = "top")+
+  facet_grid(mye_type~organ)
+
+ggplot()+
+      coord_fixed()+
+  geom_scatterpie(data =mix_gg_df %>% filter(itr=="1"),
+                  aes(x=M1_pan, y=M3_pan, color = stage_itr, group=name),
+                  pie_scale = 2,
+                  color = NA,
+                  cols = clrs %>% names) +
+  geom_smooth(data =mix_gg_df %>% filter(itr=="1"),
+              aes(x=M1_pan, y=M3_pan, group=stage_itr),
+            color = "black",
+              size = 0.4, 
+              span = 0.2, 
+              se = FALSE)+
+  scale_color_manual(values = clrs) +
+  scale_fill_manual(values = clrs) +
+  guides(color = guide_legend(nrow = 5),
+         fill = guide_legend(nrow = 5))+
+  theme(legend.position = "top")+
+  facet_grid(mye_type~organ)
+
+ggplot()+
+      coord_fixed()+
+  geom_scatterpie(data =mix_gg_df %>% filter(itr=="1"),
+                  aes(x=M1_pan, y=M3_pan, group=name),
+                  pie_scale = 2,
+                  color = NA,
+                  cols = clrs %>% names)+
+  geom_path(data =mix_gg_df %>% filter(itr=="1"),
+              aes(x=M1_pan, y=M3_pan, group=stage_itr),
+            color = "black",
+              size = 0.4,
+            show.legend = FALSE)+
+  scale_color_manual(values = clrs) +
+  scale_fill_manual(values = clrs) +
+  guides(color = guide_legend(nrow = 5),
+         fill = guide_legend(nrow = 5))+
+    theme(legend.position = "top")+
+  facet_grid(mye_type~organ)
+
+ggplot()+
+      coord_fixed()+
+  geom_scatterpie(data =mix_gg_df %>% filter(itr=="1"),
+                  aes(x=M1_pan, y=M3_pan, group=name),
+                  pie_scale = 2,
+                  color = NA,
+                  cols = clrs %>% names) +
+  geom_path(data =mix_gg_df %>% filter(itr=="1") %>% mutate(stage = str_replace(stage_itr, "_.+", "")),
+              aes(x=M1_pan, y=M3_pan, color = stage, group=stage_itr),
+              size = 0.4,
+            show.legend = FALSE)+
+  scale_color_manual(values = clrs) +
+  scale_fill_manual(values = clrs) +
+  guides(color = guide_legend(nrow = 5),
+         fill = guide_legend(nrow = 5))+
+    theme(legend.position = "top")+
+  facet_grid(mye_type~organ)
+
+ggplot()+
+      coord_fixed()+
+  geom_scatterpie(data =mix_gg_df %>% filter(itr=="1"),
+                  aes(x=M1_pan, y=M3_pan, group=name),
+                  pie_scale = 0,
+                  color = NA,
+                  cols = clrs %>% names) +
+  geom_path(data =mix_gg_df %>% filter(itr=="1") %>% mutate(stage = str_replace(stage_itr, "_.+", "")),
+              aes(x=M1_pan, y=M3_pan, color = stage, group=stage_itr, lty = mye_type),
+              size = 0.7,
+            arrow = arrow(angle = 20, ends = "last", type = "closed",length = unit(0.1, "inches")),
+            show.legend = FALSE)+
+  scale_color_manual(values = clrs) +
+  scale_fill_manual(values = clrs) +
+  scale_linetype_manual(values = c(NEUTROPHIL = 2, MONOCYTE = 1, MACROPHAGE = 1))+
+  guides(color = guide_legend(nrow = 5),
+         fill = guide_legend(nrow = 5))+
+    theme(legend.position = "top")+
+  facet_grid(.~organ)
+
+dev.off()
+
+clrs2 <- c("stromal_percent"= "grey80",
+          "NEUTROPHIL" = "#d7191c", "MYELOCYTE" = "#fdb863", "PROMYELOCYTE"= "#2b83ba")
+
+pie_scat_df <- mix_gg_df %>%
+  filter(mye_type == "NEUTROPHIL") %>%
+  mutate(stage = str_replace(stage_itr, "_.+", ""))%>%
+  group_by(organ,stage, stromal_percent) %>%
+  summarize(M1_pan = median(M1_pan),
+            M3_pan = median(M3_pan)) %>%
+  ungroup() %>% 
+  arrange(organ, stage, -stromal_percent) %>% 
+  mutate(stromal_percent_1 = 1-stromal_percent,
+         stage_1 = stage) %>% 
+  pivot_wider(names_from = "stage_1",
+              values_from = "stromal_percent_1", 
+              values_fill = 0) %>% 
+    mutate(name = 1:nrow(.),
+           name = factor(name, levels = name))
+
+write_csv(pie_scat_df, file.path("figures_tables", "fig_suo_dilution.csv"))
+
+pdf("mix_stroma_neut6.pdf",width = 13, height = 6)
+
+ggplot()+
+      coord_fixed()+
+  geom_scatterpie(data =pie_scat_df,
+                  aes(x=M1_pan, y=M3_pan, group=name),
+                  pie_scale = 2,
+                  color = NA,
+                  cols = clrs2 %>% names) +
+  scale_fill_manual(values = clrs2) +
+  # guides(color = guide_legend(nrow = 5),
+  #        fill = guide_legend(nrow = 5))+
+    facet_grid(.~organ)+
+  theme(legend.position = "top",
+        panel.grid.minor = element_line(colour="grey85", size=0.1))+
+  labs(x = "M1_pan score",
+       y = "M3_pan score",
+       fill = "cell type")
+
+ggplot()+
+      coord_fixed()+
+  geom_scatterpie(data =pie_scat_df %>% filter(stromal_percent %in% c(1,0.8,0.6,0.4,0.2, 0)),
+                  aes(x=M1_pan, y=M3_pan, group=name),
+                  pie_scale = 3.5,
+                  color = NA,
+                  cols = clrs2 %>% names) +
+  scale_fill_manual(values = clrs2) +
+  # guides(color = guide_legend(nrow = 5),
+  #        fill = guide_legend(nrow = 5))+
+    facet_grid(.~organ)+
+  theme(legend.position = "top",
+        panel.grid.minor = element_line(colour="grey85", size=0.1)) 
+
+dev.off()
+
+```
+
+Difference between stages' dilutions
+```{r}
+pdf("stage_percent_diff_.pdf")
+mix_gg_df %>%
+    mutate(stage = str_replace(stage_itr, "_.+", "")) %>% 
+  filter(mye_type == "NEUTROPHIL" , organ == "BM", itr == "1") %>% 
+  mutate( x= apply(.[,c("mye_type", "organ", "stromal_percent")],1, function(x){paste(x, collapse = ",")})) %>%
+  split(.,.$x) %>% 
+  lapply(function(mat){
+    mat %>%
+      dplyr::select(stage_itr, M1_pan, M3_pan) %>%
+      column_to_rownames("stage_itr") %>%
+      dist %>%
+      broom::tidy()
+    }) %>% 
+  bind_rows(.id = "x") %>% 
+  separate(x,
+           c("mye_type", "organ", "stromal_percent"),
+           sep = ",") %>% 
+  group_by(stromal_percent) %>% 
+  summarize(distance = sum(distance)) %>% 
+  ungroup() %>% 
+    mutate(stromal_percent = as.numeric(stromal_percent)) %>% 
+
+  ggplot(aes(1-stromal_percent, distance))+
+  geom_point()+
+  scale_x_continuous(breaks=seq(0, 1,0.1),
+                     minor_breaks=seq(0, 1,0.1))+
+  labs(x = "Neutrophil percentage (dilution)",
+       y = "Sum of distances across stages")
+  #theme(panel.grid.major.x = element_line(colour="grey90"))
+
+mix_gg_df %>%
+  filter(mye_type == "NEUTROPHIL" , organ == "BM") %>% 
+  group_by(mye_type, organ, stromal_percent) %>% 
+  summarize(M1_var = var(M1_pan)) %>% 
+  ungroup() %>% 
+  ggplot(aes(1-stromal_percent, M1_var))+
+  geom_point()+
+  scale_x_continuous(breaks=seq(0, 1,0.1),
+                     labels = scales::percent_format(accuracy = 1))+
+  labs(x = "Neutrophil percentage (dilution)",
+       y = "M1_pan variance across stages")
+
+mix_gg_df %>%
+  filter(mye_type == "NEUTROPHIL") %>% 
+  group_by(mye_type, organ, stromal_percent) %>% 
+  summarize(M1_var = var(M1_pan)) %>% 
+  ungroup() %>% 
+  ggplot(aes(1-stromal_percent, M1_var, color = organ))+
+  geom_point()+
+  scale_x_continuous(breaks=seq(0, 1,0.1),
+                     labels = scales::percent_format(accuracy = 1))+
+  labs(x = "Neutrophil percentage (dilution)",
+       y = "M1_pan variance across stages")
+
+
+mix_gg_df %>%
+  filter(mye_type == "NEUTROPHIL" ) %>% 
+  group_by(mye_type, organ, stromal_percent, itr) %>% 
+  summarize(v = var(M1_pan)) %>% 
+  ungroup() %>% 
+  ggplot(aes(1-stromal_percent, v, color = organ))+
+  geom_jitter()+
+  scale_x_continuous(breaks=seq(0, 1,0.1),
+                     minor_breaks=seq(0, 1,0.1))+
+  labs(x = "Neutrophil percentage (dilution)",
+       y = "M1_pan variance across stages")
+  #theme(panel.grid.major.x = element_line(colour="grey90"))
+
+mix_gg_df %>%
+  filter(mye_type == "NEUTROPHIL" ) %>% 
+  group_by(mye_type, organ, stromal_percent, itr) %>% 
+  summarize(v = var(M1_pan)) %>% 
+  ungroup() %>% 
+  ggplot(aes(1-stromal_percent, v, color = organ))+
+  geom_point()+
+  scale_x_continuous(breaks=seq(0, 1,0.1),
+                     minor_breaks=seq(0, 1,0.1))+
+  labs(x = "Neutrophil percentage (dilution)",
+       y = "M1_pan variance across stages")
+  #theme(panel.grid.major.x = element_line(colour="grey90"))
+
+
+mix_gg_df %>%
+  filter(mye_type == "NEUTROPHIL" ) %>% 
+  group_by(mye_type, organ, stromal_percent, itr) %>% 
+  summarize(v1 = var(M1_pan),
+            v3 = var(M2_pan)) %>% 
+  ungroup() %>% 
+  mutate(v_sum = v1+v3) %>% 
+  ggplot(aes(1-stromal_percent, v_sum, color = organ))+
+  geom_jitter()+
+  scale_x_continuous(breaks=seq(0, 1,0.1),
+                     minor_breaks=seq(0, 1,0.1))+
+  labs(x = "Neutrophil percentage (dilution)",
+       y = "M1_pan variance across stages")
+  #theme(panel.grid.major.x = element_line(colour="grey90"))
+
+ dev.off()
+ 
+mix_gg_df %>%
+    mutate(stage = str_replace(stage_itr, "_.+", "")) %>% 
+  filter(mye_type == "NEUTROPHIL" , organ == "BM") %>% 
+  mutate( x= apply(.[,c("mye_type", "organ", "stromal_percent")],1, function(x){paste(x, collapse = ",")})) %>%
+  split(.,.$x) %>% 
+  lapply(function(mat){
+    manova(cbind(M1_pan, M3_pan) ~ stage, mat) %>% 
+      broom::tidy() %>% 
+      filter(term == "stage")
+  }) %>% 
+  bind_rows(.id = "x") %>% 
+  separate(x,
+           c("mye_type", "organ", "stromal_percent"),
+           sep = ",") %>% 
+  as.data.frame()
+
+mix_gg_df %>%
+  filter(mye_type == "NEUTROPHIL" , organ == "BM") %>% 
+  mutate(stage = str_replace(stage_itr, "_.+", "")) %>% 
+  group_by(mye_type, organ, stromal_percent) %>% 
+  rstatix::dunn_test(M1_pan ~ stage) %>% 
+    group_by(mye_type, organ, stromal_percent) %>% 
+  filter(statistic == max(statistic))
+```
+
+Supplementary Figure 12
+# Tabula sapiens
+```{r}
+tabula_sapiens <- read_rds(list.files(here("external_data/tabula_sapiens/"),
+                                pattern = "rds",
+                                full.names = TRUE))
+tabula_sapiens$cell_organ <- paste0(tabula_sapiens$cell_type, "-", tabula_sapiens$tissue_in_publication)
+
+tabula_sapiens_organ_aggr <- Seurat::AggregateExpression(tabula_sapiens,
+                                              assays = "RNA",
+                                              features = homo_df_tabula_sapiens_1_to_1$ensembl_gene_id,
+                                              return.seurat = FALSE,
+                                              group.by = "cell_organ",
+                                              slot = "counts")$RNA %>% 
+  round() %>% 
+  DESeq2::vst() 
+rownames(tabula_sapiens_organ_aggr) <- homo_df_tabula_sapiens_1_to_1$ZFIN.symbol
+
+tabula_sapiens_organ_gsea <- tabula_sapiens_organ_aggr%>%
+  as.matrix() %>% 
+  GSVA::gsva(neut_modules_types$module_pan,
+             method = "ssgsea") %>%
+      as.data.frame %>% 
+      rownames_to_column("mod")
+```
+
+```{r}
+neut_tissues <- tabula_sapiens@meta.data %>%
+  filter(cell_type == "neutrophil") %>% 
+  dplyr::count(cell_type, tissue_in_publication) %>% 
+  filter(n >=50) %$% 
+  unique(tissue_in_publication) %>% 
+  as.character()
+tabula_df <- lapply(neut_tissues, function(organ){
+  organ_x <- paste0("-",organ)
+  tabula_sapiens_organ_gsea %>% 
+    dplyr::select(mod, matches(organ_x)) %>% 
+    mutate(mod = str_replace(mod, "\\..+",""),
+           mod_pan = str_extract(mod, "M."),
+           mod = NULL)%>% 
+    pivot_longer(-mod_pan) %>% 
+    pivot_wider(names_from = "mod_pan", values_from = "value") %>% 
+    mutate(name = str_replace(name, organ_x, ""),
+           name = str_replace(name, ",.+", ""),
+           name = str_replace_all(name, "positive myeloid|thymus\\-derived", ""),
+           cell_type = case_when(name %in% c("neutrophil") ~ "NEUTROPHIL",
+                               str_detect(name, "monocyte") ~ "MONOCYTE",
+                               str_detect(name, "macrophage") ~ "MACROPHAGE",
+                               str_detect(name, " dendritic cell") ~ "DC", 
+                               str_detect(name, "erythro") ~ "ERYTHROCYTE",
+                               str_detect(name, "_B") ~ "B-cell",
+                               str_detect(name, "CD4|CD8|T cell|NK") ~ "T-cell,NK",
+                               str_detect(name, "plasma|B cell") ~ "B-CELL, PLASMA",
+                               str_detect(name, "progenitor|stem") ~ "STEM CELL",
+                               TRUE ~ "Others"))
+  }) %>% 
+  setNames(.,neut_tissues) %>% 
+  bind_rows(.id = "tissue")
+
+tabula_df %>% 
+  dplyr::select(-M2) %>% 
+  write_csv(file.path("figures_tables", "fig_tabula_scores.csv"))
+
+pdf("tabula_sapine_tissue_pair_module_score.pdf")
+lapply(neut_tissues, function(organ){
+  organ_x <- paste0("-",organ)
+  tabula_sapiens_organ_gsea %>% 
+    dplyr::select(mod, matches(organ_x)) %>% 
+    mutate(mod = str_replace(mod, "\\..+",""),
+           mod_pan = str_extract(mod, "M."),
+           mod = NULL)%>% 
+    pivot_longer(-mod_pan) %>% 
+    pivot_wider(names_from = "mod_pan", values_from = "value") %>% 
+    mutate(name = str_replace(name, organ_x, ""),
+           name = str_replace(name, ",.+", ""),
+           name = str_replace_all(name, "positive myeloid|thymus\\-derived", ""),
+           cell_type = case_when(name %in% c("neutrophil") ~ "NEUTROPHIL",
+                               str_detect(name, "monocyte") ~ "MONOCYTE",
+                               str_detect(name, "macrophage") ~ "MACROPHAGE",
+                               str_detect(name, " dendritic cell") ~ "DC", 
+                               str_detect(name, "erythro") ~ "ERYTHROCYTE",
+                               str_detect(name, "_B") ~ "B-cell",
+                               str_detect(name, "CD4|CD8|T cell|NK") ~ "T-cell,NK",
+                               str_detect(name, "plasma|B cell") ~ "B-CELL, PLASMA",
+                               str_detect(name, "progenitor|stem") ~ "STEM CELL",
+                               TRUE ~ "Others")) %>% 
+  ggplot(aes(M1, M3,color = cell_type, label = name))+
+    geom_point(size = 3)+
+    ggrepel::geom_text_repel(size = 5,
+                             max.overlaps = Inf,
+                             segment.color = "grey50",
+                             show.legend = FALSE)+
+    guides(color = guide_legend(nrow = 3))+
+    labs(title = organ,
+         x = "M1_pan score",
+         y = "M3_pan score")+
+    theme(legend.position = "top")
+  })
+dev.off()
+
+cols_tabula <-  c(`NEUTROPHIL` = "#7a0177",
+                  `MONOCYTE` = "#cc4c02",
+               `MACROPHAGE` = "#41b6c4",
+                  `T-cell,NK` = "#66A61E",
+                  `Others` = "#E7298A",
+               `STEM CELL` = "#f7fcb9",
+                  `DC`= "#2b8cbe",
+                  `B-CELL, PLASMA` = "#fa9fb5",
+                  `ERYTHROCYTE` = "#fec44f")
+
+pdf("tabula_sapine_tissue_pair_module_score2.pdf")
+lapply(neut_tissues, function(organ){
+  organ_x <- paste0("-",organ)
+  tabula_sapiens_organ_gsea %>% 
+    dplyr::select(mod, matches(organ_x)) %>% 
+    mutate(mod = str_replace(mod, "\\..+",""),
+           mod_pan = str_extract(mod, "M."),
+           mod = NULL)%>% 
+    pivot_longer(-mod_pan) %>% 
+    pivot_wider(names_from = "mod_pan", values_from = "value") %>% 
+    mutate(name = str_replace(name, organ_x, ""),
+           name = str_replace(name, ",.+", ""),
+           name = str_replace_all(name, "positive myeloid|thymus\\-derived", ""),
+           cell_type = case_when(name %in% c("neutrophil") ~ "NEUTROPHIL",
+                               str_detect(name, "monocyte") ~ "MONOCYTE",
+                               str_detect(name, "macrophage") ~ "MACROPHAGE",
+                               str_detect(name, " dendritic cell") ~ "DC", 
+                               str_detect(name, "erythro") ~ "ERYTHROCYTE",
+                               str_detect(name, "_B") ~ "B-cell",
+                               str_detect(name, "CD4|CD8|T cell|NK") ~ "T-cell,NK",
+                               str_detect(name, "plasma|B cell") ~ "B-CELL, PLASMA",
+                               str_detect(name, "progenitor|stem") ~ "STEM CELL",
+                               TRUE ~ "Others")) %>% 
+  ggplot(aes(M1, M3,color = cell_type, label = name))+
+    geom_point(size = 5)+
+    ggrepel::geom_text_repel(data = . %>% 
+                               filter(cell_type %in% c("NEUTROPHIL", "MONOCYTE", "MACROPHAGE")),
+                             size = 6,
+                             max.overlaps = Inf,
+                             segment.color = "grey50",
+                             show.legend = FALSE)+
+    scale_color_manual(values = cols_tabula)+
+    guides(color = guide_legend(nrow = 4))+
+    labs(title = organ,
+         x = "M1_pan score",
+         y = "M3_pan score")+
+    theme(legend.position = "top")
+  })
+dev.off()
+```
+
+Supplementary Figure 14
+## Data preparation
+```{r}
+files <-list.files(here("external_data","GSE79044"),full.names = TRUE,pattern = "(Neu|Mac|Mon)-")
+ramirez_count <- lapply(files,read_tsv)%>%
+  purrr::reduce(inner_join, "gene_id")%>%
+  mutate(gene_id = gene_id %>% str_replace(".[0-9]+$",""))
+#biomart to match gene symbol and id
+httr::set_config(httr::config(ssl_verifypeer = FALSE))
+human_gene_attr <- getBM(attributes = c("hgnc_symbol","ensembl_gene_id"),
+           filters    = "ensembl_gene_id",
+           values     = ramirez_count$gene_id,
+           mart       = useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl")) %>% 
+  filter(nchar(hgnc_symbol)!= 0)
+ramirez_count <- ramirez_count %>%
+  inner_join(human_gene_attr, by = c("gene_id"="ensembl_gene_id"))%>%
+  dplyr::select( hgnc_symbol, everything(),-gene_id)
+
+ramirez_count_homo <- ramirez_count%>%
+  mutate(gene_name_zfin= homo_df_abs$ZFIN.symbol[match(hgnc_symbol,homo_df_abs$human_symbol)])%>%
+  na.omit() %>% 
+  pivot_longer(-c(hgnc_symbol,gene_name_zfin), names_to = "sample")%>%
+  group_by(hgnc_symbol, sample) %>% 
+  mutate(value_avg = mean(value))%>%
+  ungroup()%>%
+  group_by(gene_name_zfin, sample) %>%
+  slice_max(n=1, order_by=value_avg, with_ties = FALSE) %>% #top expressed homolog
+  ungroup() %>% 
+  dplyr::select(-hgnc_symbol, -value_avg) %>% 
+  pivot_wider(names_from = "sample", values_from = "value")
+
+ramirez_norm <- ramirez_count_homo %>% 
+  filter(gene_name_zfin %in% diff_traj$gene_symbol) %>% 
+  column_to_rownames("gene_name_zfin") %>% 
+  mutate_all(~log2(.x+1)) 
+
+ramirez_norm_avg <- apply(ramirez_norm,1,function(x){
+  aggregate(x,
+            list(y = factor(ramirez_norm %>% colnames %>% str_replace("_.+", ""),
+                            levels = ramirez_norm %>% colnames %>% str_replace("_.+", "") %>% unique())),
+            mean)$x
+  }) %>% 
+  t()
+colnames(ramirez_norm_avg) <- ramirez_norm %>% colnames %>% str_replace("_.+", "") %>% unique()
+
+ramirez_ssgsea <- ramirez_norm_avg %>%
+  as.matrix() %>% 
+  GSVA::gsva(neut_modules_types$module_pan,
+             method = "ssgsea") %>%
+      as.data.frame %>% 
+      rownames_to_column("mod")
+```
+
+## Data visualization
+```{r}
+ramirez_ssgsea %>% 
+  pivot_longer(-mod) %>%
+  pivot_wider(names_from = "mod", values_from = "value") %>% 
+  mutate(cell_type = str_extract(name, "Mac|Mon|Neu")) %>% 
+  write_csv(file.path("figures_tables", "fig_ramirez_scores.csv"))
+
+cols_ramirez <- c("NEUTROPHIL"="#7a0177","MONOCYTE"="#cc4c02","MACROPHAGE"= "#41b6c4")
+pdf("ramirez_pair_module_score.pdf")
+ramirez_ssgsea %>% 
+  pivot_longer(-mod) %>%
+  pivot_wider(names_from = "mod", values_from = "value") %>% 
+  mutate(timepoint = str_extract(name,"[0-9]+") %>% as.numeric(),
+         cell_type = str_extract(name, "Mac|Mon|Neu"),
+         cell_type = case_when(
+           cell_type == "Mac" ~ "MACROPHAGE",
+           cell_type == "Mon" ~ "MONOCYTE",
+           cell_type == "Neu" ~ "NEUTROPHIL"
+         )) %>% 
+  arrange(cell_type, timepoint) %>% 
+  ggplot(aes(M1_pan, M3_pan, label = name, fill = cell_type, color = cell_type,group = cell_type))+
+  geom_point()+
+  geom_path(show.legend = FALSE,
+            arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  ggrepel::geom_label_repel(color = "white",
+                            show.legend = FALSE)+
+  scale_color_manual(values = cols_ramirez)+
+    scale_fill_manual(values = cols_ramirez)+
+  theme(legend.position = c(0.7, 0.8))+
+  guides(colour = guide_legend(override.aes = list(size = 5)))+
+  labs(x = "M1_pan score",
+       y = "M3_pan score")
+dev.off()
+```

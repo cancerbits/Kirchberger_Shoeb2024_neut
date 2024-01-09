@@ -1,0 +1,211 @@
+---
+title: "child_functions"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+
+```{r}
+## ---- define_functions
+#qc_process
+qc_process <- function(obj, organism){
+  #patterns
+  organism_symbol <- c(human="human_symbol",zebrafish="ZFIN.symbol",mouse="mouse_symbol")
+  organism_symbol <- organism_symbol[organism]
+  mt_pattern <- c(mouse="^mt-",human="^MT-",zebrafish="^mt-")
+  rb_pattern <- c(mouse="^Rp[sl]", human="^RP[SL]",zebrafish="^r[prls]+[0-9]")
+  #calculate_percent_mt
+  obj <- PercentageFeatureSet(obj,
+                                 pattern = mt_pattern[organism],
+                                 col.name = "percent_mt")
+  #calculate_percent_rb
+  obj <- PercentageFeatureSet(obj,
+                                 pattern=rb_pattern[organism],
+                                 col.name = "percent_rb")
+   #remove genes detected in only a 20 cells
+  obj <- obj[rowSums(obj@assays$RNA@counts>0) >= param_lst$MIN_CELLS ,]
+ #filter_cell_features
+  i <-  rownames(obj@meta.data)[obj@meta.data$nFeature_RNA >= param_lst$MIN_FEATURES]
+  obj <- obj[, i]
+  #calculate_doublet
+  doubletDensity <- doubletCells(obj@assays$RNA@counts)
+  obj@meta.data$doublet_score <- log10(doubletDensity+1)
+    #filter_cell_mito_double
+  j <- rownames(obj@meta.data)[obj@meta.data$doublet_score < param_lst$MAX_DOUBLET_SCORE]
+  k <- rownames(obj@meta.data)[obj@meta.data$percent_mt < param_lst$PERC_MITO]
+  cells_valid <- names(which(table(c(j,k))==2))
+  obj <- obj[, cells_valid]
+  #calculate_cycle
+  obj <- CellCycleScoring(object = obj,
+                             g2m.features = homo_df[[organism_symbol]][homo_df$human_symbol %in% cc.genes$g2m.genes],
+                             s.features = homo_df[[organism_symbol]][homo_df$human_symbol %in% cc.genes$s.genes])
+  obj$cc_diff <- obj$S.Score - obj$G2M.Score
+  #find_variable_features
+  obj <- FindVariableFeatures(obj)
+  }
+
+#wrapper around defining anchors and mapping query to reference
+query_to_reference <- function(q,r,norma.method="SCT",ref.reduction = "pca",dimensions = param_lst$PCA_DIMS,labels_list,reduc.model="umap"){
+  anchors <- FindTransferAnchors(
+    reference = r,
+    #reference.assay = norma.method,
+    query = q,
+    #query.assay = norma.method,
+    normalization.method = norma.method,
+    reference.reduction = ref.reduction,
+    dims = seq(r@reductions$pca@cell.embeddings %>% ncol)
+  )
+  
+  q <- MapQuery(
+    anchorset = anchors,
+    query = q,
+    reference = r,
+    refdata = labels_list,
+    reference.reduction = ref.reduction, 
+    reduction.model = reduc.model
+  )
+  q$map_score <- MappingScore(anchors, ndim=r@reductions$pca@cell.embeddings %>% ncol)
+  
+  q}
+
+
+#objects sizes
+size_all_obj <- function(){
+  sort(sapply(ls(), function(x) format(object.size(get(x)), unit = 'Mb'))) %>%
+    enframe() %>%
+    separate(value,into=c("value", "unit"),sep = " ") %>% 
+    mutate(value= as.numeric(value)) %>% 
+    arrange(desc(value)) %>% as.data.frame
+  }
+
+#rename genes
+RenameGenesSeurat <- function(obj,
+                              assay_name,
+                              oldnames_ordered ,
+                              newnames )
+  { # Replace gene names in different slots of a Seurat object. Run this before integration. Run this before integration. It only changes obj@assays$RNA@counts, @data and @scale.data.
+  print("Run this before integration. It only changes counts, data and scale.data slots in the provided assay")
+  
+  #check if the subset of homologos are all assayed in the object
+  if(!all(oldnames_ordered %in% rownames(GetAssay(obj, assay_name)))){
+    stop("provided 'oldnames_ordered' argument doesn't match the names in the object")
+    }
+  #subset only the mapped homologos
+  obj <- subset(obj,features = oldnames_ordered)
+  assay <- GetAssay(obj, assay_name)
+  if (nrow(assay) == length(newnames)) {
+    #rename assay counts slot
+    if (length(assay@counts)>0){
+      ordered_index <- match(rownames(assay@counts),oldnames_ordered)
+      rownames(assay@counts) <- newnames[ordered_index]
+      message(glue("count slot in {assay_name} assay renamed"))
+      } 
+    #rename assay data slot
+    if (length(assay@data)>0){
+      ordered_index <- match(rownames(assay@data),oldnames_ordered)
+      rownames(assay@data) <- newnames[ordered_index]
+      message(glue("data slot in {assay_name} assay renamed"))
+      } 
+    #rename assay scale.dat sclot
+    if (length(assay@scale.data)>0){
+     ordered_index <- match(rownames(assay@scale.data),oldnames_ordered)
+     rownames(assay@scale.data) <- newnames[ordered_index]
+     message(glue("scale.data slot in {assay_name} assay renamed"))
+     }
+    } else {
+    stop(glue("Unequal gene sets: nrow({assay_name}) != nrow(newnames)"))}
+  obj[[assay_name]] <- assay
+  return(obj)
+  }
+
+
+#takes the output of slingshot and return a dataframe of cells embeddings, coordinates of infered curves, and order of cells on the curve
+tidy_ss_output <- function(ss_output){
+  #cell embeddings
+  cell_embedd <- ss_output@reducedDim
+  #coordinates of the curve
+  curve_coord <- lapply(names(ss_output@curves), function(x){
+    `[[`(ss_output@curves[[x]],1) %>% 
+      as.data.frame() %>% 
+      rename_with(.,~paste0(x,"_",.))
+    }) %>%
+    bind_cols()
+  #order of cell over infered curves
+  cell_order <- lapply(names(ss_output@curves), function(x){
+    `[[`(ss_output@curves[[x]],3) %>% 
+      as.data.frame() %>% 
+      rename_with(.,~paste0(x,"_lambda"))
+    }) %>%
+    bind_cols()
+  #bind outputs in a single data frame
+  cbind(cell_embedd,curve_coord,cell_order) %>% 
+    as.data.frame() %>% 
+    rownames_to_column("cell_id")
+}
+
+#given the full label of a chunk, load the saved RData cache
+load_chunk_cache <- function(chunk_label){
+  cache_dir <- file.path(out_dir,"report_reporters","cache/")
+  cache_file <- list.files(cache_dir,full.names = TRUE)
+  load_which <- str_replace(cache_file,"_[a-z0-9]+\\.RData", "") %>%#trim cache id and leave only chunk label 
+    str_detect(glue("{chunk_label}$"))
+    
+  attach(cache_file[load_which], name = chunk_label)
+  }
+
+#Aggregate trajectory into n bins
+aggr_pseud_avg <- function(seurat_obj,
+                            ss_df,
+                            genes,
+                            n_intervals = 100,
+                            min_interval = 0,
+                            assay = "SCT",
+                            slot = "data",
+                            return_obj = "mat"){
+  expr_df <- GetAssayData(object = seurat_obj[[assay]], slot = slot)
+  genes <- intersect(genes, rownames(expr_df))
+  seurat_data <- expr_df[genes,] %>%
+    as.matrix() %>%
+    t() %>%
+    as.data.frame() %>% 
+    rownames_to_column("cell_id") %>% 
+    pivot_longer(-cell_id,
+                 names_to = "gene_symbol",
+                 values_to = "expr")
+
+  intervals_cell <- ss_df %>%
+    group_by(pseudotime_bin) %>% 
+    filter(n() >= min_interval) %>% #minimum interval size to include
+    ungroup() %>% 
+    dplyr::select(pseudotime_bin, cell_id)
+
+  intervals_aggr <- intervals_cell %>% 
+    left_join(seurat_data, by = "cell_id") %>% 
+    group_by(pseudotime_bin,gene_symbol) %>%
+    summarize(gene_avg = mean(expr)) %>% 
+    ungroup()
+  
+  aggr_mat <- intervals_aggr %>% 
+    dplyr::select(pseudotime_bin, gene_symbol, gene_avg) %>% 
+    pivot_wider(names_from = gene_symbol,
+                values_from = gene_avg) %>% 
+    column_to_rownames("pseudotime_bin")%>%
+    t()
+  
+  obj_ls <- list(mat = aggr_mat[,order(as.numeric(colnames(aggr_mat)))],
+                 annot = intervals_cell)
+  return(obj_ls[[return_obj]])
+  }
+
+#Number of cells per trajectory bin
+aggr_bins_n <- function(ss_df,
+                        min_interval = 0){
+  ss_df %>%
+    group_by(pseudotime_bin) %>% 
+    filter(n() >= min_interval) %>% #minimum interval size to include
+    dplyr::count() %>% 
+    ungroup()
+}
+
+```
+

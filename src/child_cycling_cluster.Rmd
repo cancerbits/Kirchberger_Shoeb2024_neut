@@ -1,0 +1,157 @@
+---
+title: ""
+author: "Mohamed_Shoeb"
+date: "04/09/2023"
+output: html_document
+---
+
+Supplementary Figure 3kl
+```{r}
+#UMAP grouped by clusters
+fig_clycing_umap <-  srt_obj@reductions$umap@cell.embeddings %>%
+  cbind(srt_obj@meta.data) %>% 
+  as.data.frame() %>% 
+  dplyr::select(res_0.05)
+write_csv(fig_clycing_umap,file.path("figures_tables", "fig_clycing_umap.csv"))
+
+#Bar plot of cell-cycle phase percentage
+fig_cycling_bar <- srt_obj@meta.data %>% 
+  dplyr::count(res_0.05, Phase) %>%
+  mutate(Phase = factor(Phase, levels = c("G1", "S", "G2M")))
+write_csv(fig_cycling_bar,file.path("figures_tables", "fig_cycling_bar.csv"))
+
+pdf("cycling_cluster_plot.pdf")
+DimPlot(srt_obj,
+        group.by = "res_0.05",
+        label.size= 7,
+        label = TRUE)+
+  geom_text(data = data.frame(UMAP_1 = 10, UMAP_2 = 10 ),
+            aes(UMAP_1, UMAP_2),
+            label = "*",
+            size = 10)+
+   annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+  labs(color = "G2M module score")+
+  theme(title = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "none",
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+
+
+srt_obj@meta.data %>%
+  # mutate(meta_cluster = ifelse(res_0.05=="3", "Cycling cluster", "Others")) %>% 
+  dplyr::count(res_0.05, Phase) %>%
+  mutate(Phase = factor(Phase, levels = c("G1", "S", "G2M"))) %>% 
+  ggplot(aes(res_0.05,n))+
+  geom_col(aes(fill = Phase),
+           position = position_fill())+
+  geom_text(data = data.frame(res_0.05 = "3", n = 1 ),
+            label = "*",
+            size = 10)+
+  labs(x = "Cluster",
+       y = "Cells in phase/total")+
+  scale_y_continuous(labels = scales::percent_format())+
+  theme(legend.position = "top",
+        axis.text = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        axis.title = element_text(size = 15))
+dev.off()
+```
+
+Supplementary Figure 3m
+
+```{r}
+Idents(srt_obj) <- 'res_0.05'
+clust_3_diff <- Seurat::FindMarkers(srt_obj, ident.1 = "3")
+clust_3_markers <- clust_3_diff %>% 
+  arrange(desc(avg_log2FC)) %>% 
+  filter(p_val_adj<0.005) %>% 
+  rownames()
+
+fig_cycling_degs <- clust_3_markers
+write_csv(fig_cycling_degs,file.path("figures_tables", "fig_cycling_degs.csv"))
+##retreive genesets
+subcats <- c("CP:KEGG",
+             "GO:BP",
+             "CP:REACTOME")
+
+msig_db <- msigdbr::msigdbr(species = "Danio rerio") %>%
+   filter(gs_subcat %in% subcats | gs_cat == "H") %>%
+   mutate(gs_subcat = ifelse(gs_cat == "H", "HALLMARK", gs_subcat)) %>%
+  dplyr::distinct(gene_symbol, gs_subcat, gs_name) %>%
+  filter(gene_symbol %in% rownames(srt_obj)) %>% #only include genes that are part of the data 
+  group_by(gs_name) %>%
+  filter(n()>=20) %>% #exclude genesets less than 20 genes
+  ungroup()%>%
+  split(., .$gs_subcat) %>%
+  lapply(function(subcat){
+    split(subcat$gene_symbol, subcat$gs_name)
+    })
+
+##run hypergeometric test
+hypeR_obj_msig <- lapply(msig_db, function(subcat){
+    hypeR::hypeR(clust_3_markers,
+                 subcat,
+                 background = rownames(srt_obj))
+                 })
+##hypergeometric test results
+hypeR_res_msig <- lapply(hypeR_obj_msig, function(subcat){
+    subcat$data %>% 
+    arrange(fdr) %>% 
+    dplyr::select(-hits) %>% 
+    mutate(GeneRatio = overlap/geneset,
+          sig = ifelse(fdr<0.1,"*","")) %>% 
+    head(3) %>% 
+    mutate(label = label %>% str_to_sentence() %>% str_replace_all("_"," "),
+         label = factor(label, levels = unique(rev(label))))
+    }) %>%
+  bind_rows(.id = "group")
+  
+fig_cycling_gsea <- hypeR_res_msig
+write_csv(fig_cycling_gsea,file.path("figures_tables", "fig_cycling_gsea.csv"))  
+
+pdf("cycling_cluster_bar_GSEA.pdf")
+#Bar plot of overlap ration of top 5 significant genesets per database
+hypeR_res_msig %>%
+    ggplot(aes(GeneRatio, label, fill = group))+
+    geom_col(alpha = 0.6)+
+      geom_text(aes(0, label, label = label), size = 5,hjust = 0)+
+      # geom_text(aes(GeneRatio, label, label = sig), size = 5,hjust = 0)+
+      #facet_wrap(.~group, ncol = 1, scales = "free_y")+
+    scale_fill_manual(values = c("CP:KEGG" = "#e7298a", "CP:REACTOME" = "#7570b3", "GO:BP" = "#1b9e77", "HALLMARK"= "#ff7f00"))+
+      guides(alpha = "none")+
+    labs( y = "Top 3 significant genesets per database",
+          x = "Geneset overlap ratio", fill = "Database")+
+  theme(legend.position = "top",
+        legend.text = element_text(size = 12),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.line.y = element_blank(),
+        strip.background = element_blank(),
+          axis.title = element_text(size = 14))
+
+dev.off()
+```

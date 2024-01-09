@@ -1,0 +1,78 @@
+---
+title: "bulk_deconv_ssgsea_consistent_degs"
+author: "Mohamed_Shoeb"
+date: "11/25/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+#Neuroblastoma
+```{r}
+#run ssgsea
+nboma_norm_out <- corto::ssgsea(nboma_norm_aggr,
+                                consistent_specific_gene_clusters_lst)
+colnames(nboma_norm_out) <- colnames(nboma_norm_aggr)
+#add samples names and order the matrix
+nboma_norm_out <- nboma_norm_out %>% t
+nboma_norm_out <- nboma_norm_out[rownames(nboma_metadata),]
+
+#seriate the samples, separate the two group
+o_nboma <- seriate(nboma_norm_out, method = "PCA")
+nboma_ordered_samples <- rownames(nboma_norm_out)[get_order(o_nboma, 1) ] 
+nboma_ordered_samples <- c(str_subset(nboma_ordered_samples, "^BMn_"), str_subset(nboma_ordered_samples, "^MNC|^BM_"))
+```
+
+Figure 8a
+```{r}
+ComplexHeatmap::Heatmap(nboma_norm_out[nboma_ordered_samples, ],
+                        col = colorRampPalette( grDevices::hcl.colors(9,"PuOr"))(100) %>% rev(),
+                        row_split = ifelse(as.character(nboma_metadata[nboma_ordered_samples,]$infiltration_group2)=="no","Control NB-patient\nbone marrow","Infiltrated NB-patient\nbone marrow"),
+                        cluster_columns=FALSE,
+                        cluster_rows = FALSE,
+                        row_gap = unit(3, "mm"),
+                        show_row_names=FALSE,
+                         clustering_distance_rows = "euclidean",
+                         clustering_method_rows = "ward.D2",
+                        column_labels = c("M1", "M2", "M3"),
+                        name = "Module enrichement\nscore",
+                        row_dend_reorder = TRUE,
+                        cluster_row_slices = FALSE,
+                        column_title = glue(" "))
+
+
+```
+
+Supplementary Figure 9ab
+```{r}
+nboma_norm_out[nboma_ordered_samples, ] %>%
+  as.data.frame %>%
+  mutate(patient_group = ifelse(as.character(nboma_metadata[nboma_ordered_samples,]$infiltration_group2)=="no","Control NB-patient\nbone marrow","Infiltrated NB-patient\nbone marrow")) %>%
+  rownames_to_column("sample_name")%>%
+  pivot_longer(-c(sample_name,patient_group)) %>%
+  mutate(module = factor(name,labels = c(module_1 ="M1",module_2 ="M2",module_3 ="M3"))) %>% 
+  ggplot(aes(name, value, color = patient_group))+
+    geom_point()+
+    scale_color_manual(values = c("#f1a340", "#5ab4ac", "black"))+
+    geom_path(aes(group = sample_name))+
+    stat_summary(aes(colour="mean",group=1), fun.y=mean, geom="line", size=1, lty=1) +
+    facet_wrap(~patient_group, ncol = 1)+
+    labs(x = "", y = "Scaled enrichment scores")+
+    theme(legend.position = "none")
+
+#Stefanie's count data based on Daria's image
+read_csv(here("NB_CD15_QuPath.csv")) %>%
+  pivot_longer(band:myelometa, names_to = "cell_type", values_to = "ratio") %>%
+  mutate(cell_type = factor(cell_type, levels = c("myelometa", "band", "segmented")),
+        infiltrate = ifelse(infiltrate=="NO","Control NB-patient\nbone marrow","Infiltrated NB-patient\nbone marrow"))%>%
+  arrange(cell_type) %>%
+  ggplot(aes(cell_type, ratio, color = infiltrate, group = sample_id))+
+    geom_point()+
+    scale_color_manual(values = c("#f1a340", "#5ab4ac", "black"))+
+    geom_path()+
+    stat_summary(aes(colour="mean",group=1), fun.y=mean, geom="line", size=1, lty=1) +
+    facet_wrap(~infiltrate, ncol = 1)+
+    labs(x = "", y = "% of CD15+ neutrophils")+
+    theme(legend.position = "none")
+```

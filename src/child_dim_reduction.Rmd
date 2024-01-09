@@ -1,0 +1,850 @@
+---
+title: "child_dim_reduction"
+author: "Mohamed_Shoeb"
+date: "10/13/2021"
+output: html_document
+---
+
+## In house data {.tabset}
+### zebrafish data
+
+```{r zebrafish_dim_red, cache=TRUE}
+#data_transformation
+#define batch factor
+srt_obj$batch <- paste0(srt_obj$fish, "_", srt_obj$pool)
+
+#SCT
+srt_obj <- SCTransform(srt_obj,
+                            assay = "RNA",
+                            #vars.to.regress = c("cc_diff"),
+                            return.only.var.genes = F,
+                            verbose = FALSE)
+#dim reduction
+srt_obj <- RunPCA(srt_obj,
+                  assay = "SCT",
+                  verbose = FALSE,
+                  npcs = length(param_lst$PCA_DIMS)
+                  )
+
+srt_obj <- RunHarmony(srt_obj,
+                          assay.use = "SCT",
+                          group.by.vars = "batch",
+                          npcs = length(param_lst$PCA_DIMS))
+
+srt_obj <- RunUMAP(srt_obj,
+                  reduction = "harmony",
+                  umap.method = 'uwot',
+                  return.model = TRUE,
+                  dims = param_lst$PCA_DIMS,
+                  reduction.key = "UMAP_"
+                  )
+
+#cluster_cells
+srt_obj <- FindNeighbors(srt_obj, reduction = "harmony",assay="SCT")
+
+for(res in  c(0.01,0.05, 0.1, 0.2, 0.3, 0.4, 0.5)){
+  srt_obj <- FindClusters(srt_obj,
+                          graph.name = "SCT_snn",
+                          resolution = res,
+                          verbose = FALSE)
+  srt_obj@meta.data[glue("res_{res}")] <- srt_obj@meta.data[glue("SCT_snn_res.{res}")]
+  srt_obj@meta.data[glue("SCT_snn_res.{res}")] <- NULL
+}
+```
+
+Figure3b
+```{r}
+## all cells 
+srt_obj_df <- srt_obj@reductions$umap@cell.embeddings %>%
+  cbind(srt_obj@meta.data)%>%
+  as.data.frame()
+#citrin_state
+set.seed(1992)
+fig_3_citrin_state <- srt_obj_df %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = citrin_state),
+             size = 1)+
+  scale_color_manual(values = c("NO" = "#fde0dd",
+                                "INT" =  "#fa9fb5",
+                                "HI" = "#dd3497",
+                                "WKM" = "grey80"),
+                     limits = c("NO", "INT", "HI","WKM"))+
+  guides(colour = guide_legend(ncol = 1,
+                               override.aes = list(size = 4)))+
+    scale_y_continuous(expand = expansion(add = c(1,3)))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+ annotate(geom = "text",
+           size = 5,
+         label = glue("n = {scales::comma(nrow(srt_obj_df))}"),
+         x = min(srt_obj_df$UMAP_1)-1, y = median(srt_obj_df$UMAP_2),
+           angle = 90)+
+  labs(color = "Sorts")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.89),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+```
+
+Supplementary Figure3b,c,d,e,f,g
+```{r}
+#manuscript figures
+#fish
+set.seed(1992)
+fig_3_fish <- srt_obj_df %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = fish),
+             size = 1)+
+   scale_color_manual(values = c("F1" = "#d6604d",
+                                "F2" =  "#4393c3"))+
+  guides(colour = guide_legend(ncol = 1,
+                               override.aes = list(size = 4)))+
+ annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+  labs(color = "Fish")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.88),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+#pool
+set.seed(1992)
+fig_3_pool <-srt_obj_df %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = pool),
+             size = 1)+
+  scale_color_manual(values = c("A1" = "#e08214",
+                                "A2" =  "#8073ac"))+
+  guides(colour = guide_legend(ncol = 1,
+                               override.aes = list(size = 4)))+
+ annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+  labs(color = "Pool")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.88),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+#batch
+set.seed(1992)
+fig_3_batch <- srt_obj_df %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = batch),
+             size = 1)+
+   scale_color_manual(values = c("F1_A1" = "#1f78b4",
+                                "F1_A2" =  "#33a02c",
+                                "F2_A1" = "#e31a1c",
+                                "F2_A2" =  "#ff7f00"))+
+  guides(colour = guide_legend(ncol = 1,
+                               override.aes = list(size = 4)))+
+ annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+  labs(color = "Batch")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.88),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+#Phase
+set.seed(1992)
+fig_3_Phase <- srt_obj_df %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = Phase),
+             size = 1)+
+  guides(colour = guide_legend(ncol = 1,
+                               override.aes = list(size = 4)))+
+ annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+  labs(color = "Cell cycle phase")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.88),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+#percent_mt
+set.seed(1992)
+fig_3_percent_mt <- srt_obj_df %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = percent_mt),
+             size = 1)+
+  scale_color_viridis()+
+ annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+  labs(color = "Mitochondrial content (%)")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.88),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+
+#nCount_RNA
+set.seed(1992)
+fig_3_nCount_RNA <- srt_obj_df %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = log10(nCount_RNA)),
+             size = 1)+
+  scale_color_viridis()+
+ annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+  labs(color = "Raw count (log10)")+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.05,0.88),
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())+
+  coord_fixed()
+#mmp9 and cebpb
+set.seed(1992)
+fig_3_mmp9_cebpb <- srt_obj_df %>%
+  dplyr::sample_n(size = nrow(.)) %>% 
+  mutate(mmp9 = srt_obj@assays$SCT@data["mmp9",rownames(.)],
+         cebpb = srt_obj@assays$SCT@data["cebpb",rownames(.)])%>%
+  pivot_longer(c(mmp9, cebpb), names_to = "gene_symbol", values_to = "Normalized expression") %>% 
+  ggplot()+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2),
+             size = 1.3, color = "black")+
+  ggrastr::geom_point_rast(aes(UMAP_1, UMAP_2, color = `Normalized expression`),
+             size = 1)+
+  viridis::scale_color_viridis(option = "A")+
+ annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-3+5,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-1,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate("segment",
+           x = min(srt_obj_df$UMAP_1)-1, xend = min(srt_obj_df$UMAP_1)-1,
+           y = min(srt_obj_df$UMAP_2)-1, yend = min(srt_obj_df$UMAP_2)-3+5,
+           colour = "black",
+           size = 0.6,
+           arrow = arrow(angle = 30, ends = "last", type = "closed",length = unit(0.1, "inches")))+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 2",
+           x = min(srt_obj_df$UMAP_1)-1.5, y = min(srt_obj_df$UMAP_2)+0.2,
+           angle = 90)+
+  annotate(geom = "text",
+           size = 3,
+           label = "UMAP 1",
+           x = min(srt_obj_df$UMAP_1)+0.2, y = min(srt_obj_df$UMAP_2)-1.5)+
+  labs(color = "Normalized\nexpression")+
+  facet_wrap(~gene_symbol)+
+  guides(colour = guide_colourbar(title.position = "top"))+
+  theme(axis.ticks = element_blank(),
+        legend.position = c(0.8,0.1),
+        legend.direction = "horizontal",
+        axis.line = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank(),
+        strip.text = element_text(size = 18, hjust = 0),
+        strip.background = element_blank())+
+  coord_fixed()
+
+```
+
+## External data {.tabset}
+### ref1
+```{r ref1_dim_red, cache=TRUE}
+#data_transformation
+#SCT
+srt_obj_ref1 <- SCTransform(srt_obj_ref1,
+                            assay = "RNA",
+                            #vars.to.regress = c("cc_diff"),
+                            return.only.var.genes = F,
+                            verbose = FALSE)
+#LogNormalize
+srt_obj_ref1 <- NormalizeData(srt_obj_ref1, assay = "RNA")
+srt_obj_ref1 <- FindVariableFeatures(srt_obj_ref1,assay="RNA",nfeatures=3000)
+srt_obj_ref1 <- ScaleData(srt_obj_ref1,
+                          assay="RNA",
+                       features = rownames(srt_obj_ref1))
+#dim reduction
+srt_obj_ref1 <- RunPCA(srt_obj_ref1,
+                  verbose = FALSE,
+                  assay='RNA',
+                  npcs = length(param_lst$PCA_DIMS)
+                  )
+srt_obj_ref1 <- RunUMAP(srt_obj_ref1,
+                   reduction = "pca",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   reduction.name = "umap_pca",
+                   dims = param_lst$PCA_DIMS)
+srt_obj_ref1 <- RunLDA(srt_obj_ref1,
+                 labels = as.character( srt_obj_ref1$`sample_characteristic[cell_type]`), 
+                  verbose = FALSE,
+                  assay='RNA'
+                  )
+
+srt_obj_ref1 <- RunUMAP(srt_obj_ref1,
+                   reduction = "lda",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   reduction.name = "umap_lda",
+                   dims = seq(ncol(Embeddings(srt_obj_ref1, "lda"))-1))
+
+  
+
+#cluster_cells
+srt_obj_ref1 <- FindNeighbors(srt_obj_ref1, reduction = "pca",assay="RNA")
+
+for(res in  c(0.1, 0.2,0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)){
+  srt_obj_ref1 <- FindClusters(srt_obj_ref1,
+                                 resolution = res,
+                                 verbose = FALSE,
+                                 graph.name = "RNA_snn")
+  srt_obj_ref1@meta.data[glue("res_{res}")] <- srt_obj_ref1@meta.data[glue("RNA_snn_res.{res}")]
+  srt_obj_ref1@meta.data[glue("RNA_snn_res.{res}")] <- NULL
+}
+
+#major cell type in each cluster
+srt_obj_ref1$ref_clust_major <- srt_obj_ref1@meta.data %>%
+  dplyr::select(res_0.8,`sample_characteristic[cell_type]`) %>% 
+  group_by(res_0.8,`sample_characteristic[cell_type]` ) %>%
+  mutate(n = dplyr::n()) %>%
+  ungroup(`sample_characteristic[cell_type]`) %>%
+  mutate( major_label = `sample_characteristic[cell_type]`[which.max(n)]) %>%
+  ungroup() %$%
+  major_label
+
+```
+
+### ref2
+```{r ref2_dim_red, cache=TRUE}
+#SCT
+srt_obj_ref2 <- SCTransform(srt_obj_ref2,
+                            assay = "RNA",
+                            #vars.to.regress = c("cc_diff"),
+                            return.only.var.genes = F,
+                            verbose = FALSE)
+#LogNormalize
+srt_obj_ref2 <- NormalizeData(srt_obj_ref2, assay = "RNA")
+srt_obj_ref2 <- FindVariableFeatures(srt_obj_ref2,assay="RNA",nfeatures=3000)
+srt_obj_ref2 <- ScaleData(srt_obj_ref2,
+                          assay="RNA",
+                       features = rownames(srt_obj_ref2))
+#dim reduction
+srt_obj_ref2 <- RunPCA(srt_obj_ref2,
+                  verbose = FALSE,
+                  assay='RNA',
+                  npcs = length(param_lst$PCA_DIMS)
+                  )
+srt_obj_ref2 <- RunUMAP(srt_obj_ref2,
+                   reduction = "pca",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   reduction.name = "umap_pca",
+                   dims = param_lst$PCA_DIMS)
+```
+
+keep only transgeneic (Tg) cells 
+```{r ref2_dim_red_subset, cache=TRUE}
+#subset Tg cells
+tg_cells <- srt_obj_ref2$`characteristics[genotype]` %>% str_subset("^Tg")
+sub_cell_ref2 <- srt_obj_ref2$cell_id[srt_obj_ref2$`characteristics[genotype]` %in% unique(tg_cells)]
+srt_obj_ref2 <- subset(srt_obj_ref2, cell_id %in% sub_cell_ref2)
+
+#SCT
+srt_obj_ref2 <- SCTransform(srt_obj_ref2,
+                            assay = "RNA",
+                            #vars.to.regress = c("cc_diff"),
+                            return.only.var.genes = F,
+                            verbose = FALSE)
+#dim reduction
+srt_obj_ref2 <- RunPCA(srt_obj_ref2,
+                  verbose = FALSE,
+                  assay='RNA')
+
+srt_obj_ref2 <- RunUMAP(srt_obj_ref2,
+                   reduction = "pca",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                  reduction.name = "umap_pca",
+                   dims = param_lst$PCA_DIMS)
+
+srt_obj_ref2 <- RunLDA(srt_obj_ref2,
+                 labels = as.character( srt_obj_ref2$`characteristics[genotype]`), 
+                  verbose = FALSE,
+                  assay='RNA'
+                  )
+
+srt_obj_ref2 <- RunUMAP(srt_obj_ref2,
+                   reduction = "lda",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                  reduction.name = "umap_lda",
+                   dims = seq(ncol(Embeddings(srt_obj_ref2, "lda"))-1))
+
+#cluster_cells
+srt_obj_ref2 <- FindNeighbors(srt_obj_ref2, reduction = "pca",assay="RNA")
+
+for(res in  c(0.1, 0.2,0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)){
+  srt_obj_ref2 <- FindClusters(srt_obj_ref2,
+                                 resolution = res,
+                                 verbose = FALSE,
+                                 graph.name = "RNA_snn")
+  srt_obj_ref2@meta.data[glue("res_{res}")] <- srt_obj_ref2@meta.data[glue("RNA_snn_res.{res}")]
+  srt_obj_ref2@meta.data[glue("RNA_snn_res.{res}")] <- NULL
+}
+
+#major cell type in each cluster
+srt_obj_ref2$ref_clust_major <- srt_obj_ref2@meta.data %>%
+  dplyr::select(res_0.6,`characteristics[genotype]`) %>% 
+  group_by(res_0.6,`characteristics[genotype]` ) %>%
+  mutate(n = dplyr::n()) %>%
+  ungroup(`characteristics[genotype]`) %>%
+  mutate( major_label = `characteristics[genotype]`[which.max(n)]) %>%
+  ungroup() %$%
+  major_label
+
+```
+
+###Xie
+```{r xie_dim_red, cache=TRUE}
+xie_mm <- xie_mm[,xie_mm@meta.data %>% filter(cell_type %in%  c("Neu"), cluster != "Cont") %>% rownames()] 
+
+xie_mm  <- SCTransform(xie_mm,
+                            return.only.var.genes = F,
+                            verbose = FALSE)
+```
+
+```{r xie_neut_dim_red, cache=TRUE}
+## filtered neutrophil subset
+#subset healthy neutrophils from mouse
+xie_mm_neut <- xie_mm[,xie_mm@meta.data %>% filter(cell_type %in%  c("Neu"), str_detect(orig.ident, "ctl"), cluster != "Cont") %>% rownames()] 
+#
+
+xie_mm_neut  <- SCTransform(xie_mm_neut,
+                            #vars.to.regress = c("G2M.Score"),
+                            return.only.var.genes = F,
+                            verbose = FALSE)
+
+xie_mm_neut <- RunPCA(xie_mm_neut,
+                      verbose = FALSE,
+                      assay = "SCT",
+                      npcs = length(param_lst$PCA_DIMS)
+                      )
+
+xie_mm_neut <- RunHarmony(xie_mm_neut,
+                          assay = "SCT",
+                          group.by.vars = c("orig.ident"),
+                          npcs = length(param_lst$PCA_DIMS))
+
+xie_mm_neut <- RunUMAP(xie_mm_neut,
+                   reduction = "harmony",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   dims = param_lst$PCA_DIMS)
+
+#cluster_cells
+xie_mm_neut <- FindNeighbors(xie_mm_neut, reduction = "harmony",assay="SCT")
+
+for(res in  c(0.01, 0.1, 0.2)){
+  xie_mm_neut <- FindClusters(xie_mm_neut, resolution = res,
+                          verbose = FALSE)
+  xie_mm_neut@meta.data[glue("res_{res}")] <- xie_mm_neut@meta.data[glue("SCT_snn_res.{res}")]
+  xie_mm_neut@meta.data[glue("SCT_snn_res.{res}")] <- NULL
+  }
+```
+
+### neutrotime
+```{r neutrotime_all_dim_red, cache=TRUE}
+neutime_obj_all <- SCTransform(neutime_obj_all,
+              assay = "RNA",
+              return.only.var.genes = F,
+              verbose = FALSE)
+```
+
+```{r neutrotime_dim_red, cache=TRUE}
+neutime_obj <- SCTransform(neutime_obj,
+              assay = "RNA",
+              #vars.to.regress = c( "cc_diff"),
+              return.only.var.genes = F,
+              verbose = FALSE)
+
+
+neutime_obj <- RunPCA(neutime_obj,
+                      assay = "SCT",
+                      verbose = FALSE,
+                      npcs = length(param_lst$PCA_DIMS))
+
+neutime_obj <- RunHarmony(neutime_obj,
+                          assay.use = "SCT",
+                          group.by.vars = c("dataset_extract"),
+                          npcs = length(param_lst$PCA_DIMS))
+
+neutime_obj <- RunUMAP(neutime_obj,
+                   reduction = "harmony",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   dims = param_lst$PCA_DIMS)
+
+#add embeddings from scPortal
+pca_scPortal <- as.matrix(neutime_obj@meta.data[,c("PC_1", "PC_2")] %>% mutate_all(as.numeric))
+diffusion_map_scPortal <- as.matrix(neutime_obj@meta.data[,c("DC_1", "DC_2")] %>% mutate_all(as.numeric))
+
+neutime_obj[["pca_scPortal"]] <- CreateDimReducObject(embeddings = pca_scPortal, key = "sc_PC_", assay = DefaultAssay(neutime_obj))
+
+neutime_obj[["diffmap_scPortal"]] <- CreateDimReducObject(embeddings = diffusion_map_scPortal, key = "sc_DC_", assay = DefaultAssay(neutime_obj))
+
+```
+
+### abc
+```{r abc_dim_red, cache=TRUE}
+#data_transformation
+abs_obj <-  SCTransform(abs_obj,
+              assay = "RNA",
+              #vars.to.regress = c("cc_diff"),
+              return.only.var.genes = F,
+              verbose = FALSE)
+
+abs_obj <- RunPCA(abs_obj,
+                      assay = "SCT",
+                      verbose = FALSE,
+                      npcs = length(param_lst$PCA_DIMS))
+
+abs_obj <- RunHarmony(abs_obj,
+                          assay.use = "SCT",
+                          group.by.vars = c("dataset"),
+                          npcs = length(param_lst$PCA_DIMS))
+
+abs_obj <- RunUMAP(abs_obj,
+                   reduction = "harmony",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   dims = param_lst$PCA_DIMS)
+
+#cluster_cells
+abs_obj <- FindNeighbors(abs_obj, reduction = "harmony",assay="SCT")
+
+for(res in  c(0.01, 0.1, 0.2)){
+  abs_obj <- FindClusters(abs_obj, resolution = res,
+                          verbose = FALSE)
+  abs_obj@meta.data[glue("res_{res}")] <- abs_obj@meta.data[glue("SCT_snn_res.{res}")]
+  abs_obj@meta.data[glue("SCT_snn_res.{res}")] <- NULL
+}
+
+```
+
+Subset only neutrophils
+```{r abc_dim_red_neut, cache=TRUE}
+#subset neutrophils and exclude cells with high ribosomal content
+neut_sub <- abs_obj$cell_type %>% str_subset("N$") %>% unique()
+abs_obj_neut <-  subset(abs_obj,cell_type %in% neut_sub)
+
+#data_transformation
+abs_obj_neut <- SCTransform(abs_obj_neut,
+              assay = "RNA",
+              #vars.to.regress = c("G2M.Score"),
+              return.only.var.genes = F,
+              verbose = FALSE)
+
+abs_obj_neut <- RunPCA(abs_obj_neut,
+                      assay = "SCT",
+                      verbose = FALSE,
+                      npcs = length(param_lst$PCA_DIMS))
+
+abs_obj_neut <- RunUMAP(abs_obj_neut,
+                   reduction = "pca",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   dims = param_lst$PCA_DIMS)
+
+#cluster_cells
+abs_obj_neut <- FindNeighbors(abs_obj_neut, reduction = "pca",assay="SCT")
+
+for(res in  c(0.01, 0.1, 0.2)){
+  abs_obj_neut <- FindClusters(abs_obj_neut, resolution = res,
+                          verbose = FALSE)
+  abs_obj_neut@meta.data[glue("res_{res}")] <- abs_obj_neut@meta.data[glue("SCT_snn_res.{res}")]
+  abs_obj_neut@meta.data[glue("SCT_snn_res.{res}")] <- NULL
+}
+
+```
+
+### Ballesteros
+```{r Ballesteros_dim_red, cache=TRUE}
+#ballesteros_obj <- subset(ballesteros_obj,percent_rb<=10)
+
+ballesteros_obj <- SCTransform(ballesteros_obj,
+              assay = "RNA",
+              #vars.to.regress = c("percent_rb"),
+              return.only.var.genes = F,
+              verbose = FALSE)
+
+ballesteros_obj <- RunPCA(ballesteros_obj,
+                  verbose = FALSE,
+                  assay='SCT',
+                  npcs = length(param_lst$PCA_DIMS)
+                  )
+
+#integrate data using harmony
+ballesteros_obj <- RunHarmony(ballesteros_obj,
+                      group.by.vars = "orig.ident",
+                      assay.use="SCT",
+                      npcs = length(param_lst$PCA_DIMS))
+
+ballesteros_obj <- RunUMAP(ballesteros_obj,
+                   reduction = "harmony",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   dims = param_lst$PCA_DIMS)
+
+#cluster_cells
+ballesteros_obj <- FindNeighbors(ballesteros_obj, reduction = "harmony",assay="SCT")
+
+for(res in  c(0.01, 0.1, 0.2)){
+  ballesteros_obj <- FindClusters(ballesteros_obj, resolution = res,
+                          verbose = FALSE, graph.name = "SCT_snn")
+  ballesteros_obj@meta.data[glue("res_{res}")] <- ballesteros_obj@meta.data[glue("SCT_snn_res.{res}")]
+  ballesteros_obj@meta.data[glue("SCT_snn_res.{res}")] <- NULL
+}
+
+```
+
+subset neutrophils
+```{r Ballesteros_neut_dim_red, cache=TRUE}
+ballesteros_obj_neut <- subset(ballesteros_obj,Cell_Type == "Neutrophils")
+
+ballesteros_obj_neut <- SCTransform(ballesteros_obj_neut,
+              assay = "RNA",
+              #vars.to.regress = c("percent_rb"),
+              return.only.var.genes = F,
+              verbose = FALSE)
+
+ballesteros_obj_neut <- RunPCA(ballesteros_obj_neut,
+                  verbose = FALSE,
+                  assay='SCT',
+                  npcs = length(param_lst$PCA_DIMS)
+                  )
+
+#integrate data using harmony
+ballesteros_obj_neut <- RunHarmony(ballesteros_obj_neut,
+                      group.by.vars = "orig.ident",
+                      assay.use="SCT",
+                      npcs = length(param_lst$PCA_DIMS))
+
+ballesteros_obj_neut <- RunUMAP(ballesteros_obj_neut,
+                   reduction = "harmony",
+                   umap.method = 'uwot',
+                   return.model = TRUE,
+                   dims = param_lst$PCA_DIMS)
+
+#cluster_cells
+ballesteros_obj_neut <- FindNeighbors(ballesteros_obj_neut, reduction = "harmony",assay="SCT")
+
+for(res in  c(0.01, 0.1, 0.2)){
+  ballesteros_obj_neut <- FindClusters(ballesteros_obj_neut, resolution = res,
+                          verbose = FALSE, graph.name = "SCT_snn")
+  ballesteros_obj_neut@meta.data[glue("res_{res}")] <- ballesteros_obj_neut@meta.data[glue("SCT_snn_res.{res}")]
+  ballesteros_obj_neut@meta.data[glue("SCT_snn_res.{res}")] <- NULL
+}
+
+```
+
+### Suo
+```{r suo_neut_dim_red, cache=TRUE}
+suo_neut <- SCTransform(suo_neut,
+              assay = "RNA",
+              return.only.var.genes = F,
+              verbose = FALSE)
+
+suo_neut <- RunPCA(suo_neut,
+                  verbose = FALSE,
+                  assay='SCT',
+                  npcs = length(param_lst$PCA_DIMS)
+                  )
+
+#integrate data using harmony
+suo_neut <- RunHarmony(suo_neut,
+                      group.by.vars = "donor",
+                      assay.use="SCT",
+                      npcs = length(param_lst$PCA_DIMS))
+```
+
+### Tabula sapien
+```{r tabula_sapiens_neut_dim_red, cache=TRUE}
+
+tabula_sapiens_neut <- SCTransform(tabula_sapiens_neut,
+              assay = "RNA",
+              return.only.var.genes = F,
+              verbose = FALSE)
+
+tabula_sapiens_neut <- RunPCA(tabula_sapiens_neut,
+                  verbose = FALSE,
+                  assay='SCT',
+                  npcs = length(param_lst$PCA_DIMS)
+                  )
+
+#integrate data using harmony
+tabula_sapiens_neut <- RunHarmony(tabula_sapiens_neut,
+                      group.by.vars = "donor",
+                      assay.use="SCT",
+                      npcs = length(param_lst$PCA_DIMS))
+```
