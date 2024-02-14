@@ -1,0 +1,9 @@
+barcode_label,fish,fish_tank,fish_genotype,data_of_birth,sex,tissue,sort_date,citrin_state,sort_id,sort_description,facs_gate_id,sort_medium,sort_volume,sort_well,sort_n,barcode_id,primer_id,barcode_seq
+1,F1,2632,LysC:CFP-NTR+/-Mmp9:Citrine-CAAX+/-(Kita:KalTA4-),02/09/2019,male,whole_kidney_marrow(WKM),11/03/2020,HI,F1_HI,LysC:CFP+ Mmp9:Cithigh,P6,5ul PBS/1%BSA,40ul (0.1% BSA),A1,3800,BC1,948 BC1,GGAGAAGA
+2,F1,2632,LysC:CFP-NTR+/-Mmp9:Citrine-CAAX+/-(Kita:KalTA4-),02/09/2019,male,whole_kidney_marrow(WKM),11/03/2020,INT,F1_INT,LysC:CFP+ Mmp9:Citintermediate,P5,5ul PBS/1%BSA,40ul (0.1% BSA),A1,5000,BC88,959 BC88,AGCATCAC
+3,F1,2632,LysC:CFP-NTR+/-Mmp9:Citrine-CAAX+/-(Kita:KalTA4-),02/09/2019,male,whole_kidney_marrow(WKM),11/03/2020,NO,F1_NO,LysC:CFP+ Mmp9:Citlow/neg,P4,5ul PBS/1%BSA,40ul (0.1% BSA),A1,10000,BC16,950 BC16,CAATCGGT
+4,F1,2632,LysC:CFP-NTR+/-Mmp9:Citrine-CAAX+/-(Kita:KalTA4-),02/09/2019,male,whole_kidney_marrow(WKM),11/03/2020,WKM,F1_WKM,FSC/SSC/live gate of WKM,P1,5ul PBS/1%BSA,40ul (0.1% BSA),A2,20000,BC24,951 BC24,GTACGCAT
+5,F2,2632,LysC:CFP-NTR+/-Mmp9:Citrine-CAAX+/-(Kita:KalTA4-),02/09/2019,male,whole_kidney_marrow(WKM),11/03/2020,HI,F2_HI,LysC:CFP+ Mmp9:Cithigh,P6,5ul PBS/1%BSA,40ul (0.1% BSA),A1,1800,BC32,952 BC32,GCATGTAC
+6,F2,2632,LysC:CFP-NTR+/-Mmp9:Citrine-CAAX+/-(Kita:KalTA4-),02/09/2019,male,whole_kidney_marrow(WKM),11/03/2020,INT,F2_INT,LysC:CFP+ Mmp9:Citintermediate,P5,5ul PBS/1%BSA,40ul (0.1% BSA),A1,1700,BC40,953 BC40,ACAGTGCT
+7,F2,2632,LysC:CFP-NTR+/-Mmp9:Citrine-CAAX+/-(Kita:KalTA4-),02/09/2019,male,whole_kidney_marrow(WKM),11/03/2020,NO,F2_NO,LysC:CFP+ Mmp9:Citlow/neg,P4,5ul PBS/1%BSA,40ul (0.1% BSA),A1,9000,BC48,954 BC48,TCCGAGAT
+8,F2,2632,LysC:CFP-NTR+/-Mmp9:Citrine-CAAX+/-(Kita:KalTA4-),02/09/2019,male,whole_kidney_marrow(WKM),11/03/2020,WKM,F2_WKM,FSC/SSC/live gate of WKM,P1,5ul PBS/1%BSA,40ul (0.1% BSA),A2,20000,BC56,955 BC56,CGCGCACA
