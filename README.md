@@ -24,7 +24,7 @@ Affiliations:
 
 <sup>10</sup>Current address: ABF Pharmaceutical Services GmbH, Vienna, Austria;
 
-## Abstract:
+# Abstract:
 
 Neutrophils are evolutionarily conserved innate immune cells playing pivotal roles in host defence. Zebrafish models have contributed substantially to our understanding of neutrophil functions but similarities to human neutrophil maturation have not been systematically characterized, which limits their applicability to studying human disease. Here we show, by generating and analysing transgenic zebrafish strains representing distinct neutrophil differentiation stages, a high-resolution transcriptional profile of neutrophil maturation. We link gene expression at each stage to characteristic transcription factors, including C/ebp-β, which is important for late neutrophil maturation. Cross-species comparison of zebrafish, mouse, and human samples confirms high molecular similarity of immature stages and discriminates zebrafish-specific from pan-species gene signatures. Applying the pan-species neutrophil maturation signature to RNA-sequencing data from human neuroblastoma patients reveals association between metastatic tumor cell infiltration in the bone marrow and an overall increase in mature neutrophils. Our detailed neutrophil maturation atlas thus provides a valuable resource for studying neutrophil function at different stages across species in health and disease.
 
@@ -33,17 +33,30 @@ Neutrophils are evolutionarily conserved innate immune cells playing pivotal rol
 * `neut_zfish.Dockerfile` - docker file of the project.
 * `src/` - data analysis scripts.
 
-# Analysis workflow:
+## Analysis workflow:
 
 A separate script is dedicated to each analysis steps to faciliate understanding and maintaining the workflow. The analysis pipeline is defined in `src/RNA-seq/mother.Rmd` where "child-" scripts are processed sequentially.  For optimal reproducibility, we used a Docker container `neut_zfish.Dockerfile`, which contains R and all dependent libraries preinstalled.
 
-# Data preparation and loading
+## Data preparation and loading
 
 1. Download and, if needed, preprocess the GEO data into a defined input directory.
 2. Set the path to the input directory at the top of `src/mother.Rmd` and use `neut_zfish.Dockerfile` to run the analysis workflow.
 
 Input data can be obtained from GEO (link below).
 
-## Links:
+# Interactive data exploration:
 
-* Gene Expression Omnibus (GEO) entry: <a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE252788">GSE252788</a>
+Data from this paper are available for interactive exploration using Vitessce (http://vitessce.io/):
+
+Figure 3:
+
+http://vitessce.io/#?url=https://cancerbits.github.io/Kirchberger_Shoeb2024_neut/vitessce-data/vitessce_fig3.h5ad.zarr/config.json
+
+Figure 4:
+
+http://vitessce.io/#?url=https://cancerbits.github.io/Kirchberger_Shoeb2024_neut/vitessce-data/vitessce_fig4.h5ad.zarr/config.json
+
+# Other links:
+
+* Gene Expression Omnibus (GEO) entry: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE252788
+* Code archive: https://doi.org/10.5281/zenodo.10475407
