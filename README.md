@@ -1,6 +1,6 @@
 # Supplementary code repository for: Comparative transcriptomics coupled to developmental grading via transgenic Zebrafish reporter strains identifies conserved features in neutrophil maturation
 
-Authors: Stefanie Kirchberger,<sup>1,*</sup> Mohamed R. Shoeb,<sup>1,*</sup> Daria Lazic,<sup>1</sup>Andrea Wenninger-Weinzierl,<sup>1</sup> Kristin Fischer,<sup>1</sup> Lisa E. Shaw,<sup>2</sup> Filomena Nogueira,<sup>1,3,4,10</sup> Fikret Rifatbegovic,<sup>1</sup> Eva Bozsaky,<sup>1</sup> Ruth Ladenstein,<sup>1</sup> Bernd Bodenmiller,<sup>5,6</sup> Thomas Lion,<sup>1,3,7</sup> David Traver,<sup>8,9</sup> Matthias Farlik,<sup>2</sup> Christian Schöfer,<sup>9</sup> Sabine Taschner-Mandl,<sup>1</sup> Florian Halbritter,<sup>1,#</sup> Martin Distel<sup>1,#</sup>
+Authors: Stefanie Kirchberger,<sup>1,\*</sup> Mohamed R. Shoeb,<sup>1,\*</sup> Daria Lazic,<sup>1</sup>Andrea Wenninger-Weinzierl,<sup>1</sup> Kristin Fischer,<sup>1</sup> Lisa E. Shaw,<sup>2</sup> Filomena Nogueira,<sup>1,3,4,10</sup> Fikret Rifatbegovic,<sup>1</sup> Eva Bozsaky,<sup>1</sup> Ruth Ladenstein,<sup>1</sup> Bernd Bodenmiller,<sup>5,6</sup> Thomas Lion,<sup>1,3,7</sup> David Traver,<sup>8,9</sup> Matthias Farlik,<sup>2</sup> Christian Schöfer,<sup>9</sup> Sabine Taschner-Mandl,<sup>1</sup> Florian Halbritter,<sup>1,#</sup> Martin Distel<sup>1,#</sup>
 
 Affiliations:
 
